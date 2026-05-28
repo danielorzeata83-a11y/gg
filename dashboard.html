@@ -1,0 +1,523 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polymarket Copy-Bot Dashboard</title>
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --border:   #30363d;
+      --text:     #e6edf3;
+      --muted:    #8b949e;
+      --green:    #3fb950;
+      --green-dim:#1a4226;
+      --red:      #f85149;
+      --red-dim:  #3d1a19;
+      --blue:     #58a6ff;
+      --yellow:   #d29922;
+      --radius:   8px;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      font-size: 14px;
+      min-height: 100vh;
+    }
+
+    header {
+      display: flex;
+      align-items: center;
+      justify-content: space-between;
+      padding: 16px 24px;
+      border-bottom: 1px solid var(--border);
+      background: var(--surface);
+      position: sticky;
+      top: 0;
+      z-index: 10;
+    }
+
+    header h1 {
+      font-size: 18px;
+      font-weight: 600;
+      letter-spacing: 0.5px;
+    }
+
+    .header-right {
+      display: flex;
+      align-items: center;
+      gap: 16px;
+      font-size: 13px;
+      color: var(--muted);
+    }
+
+    .status-dot {
+      display: inline-block;
+      width: 9px; height: 9px;
+      border-radius: 50%;
+      background: var(--green);
+      box-shadow: 0 0 6px var(--green);
+      animation: pulse 2s infinite;
+    }
+    .status-dot.offline { background: var(--red); box-shadow: 0 0 6px var(--red); animation: none; }
+
+    @keyframes pulse {
+      0%, 100% { opacity: 1; }
+      50%       { opacity: 0.4; }
+    }
+
+    #countdown { font-variant-numeric: tabular-nums; }
+
+    main {
+      max-width: 1400px;
+      margin: 0 auto;
+      padding: 24px 20px;
+    }
+
+    /* ---- Summary cards ---- */
+    .cards {
+      display: grid;
+      grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+      gap: 14px;
+      margin-bottom: 24px;
+    }
+
+    .card {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      padding: 18px 20px;
+    }
+
+    .card-label {
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: 1px;
+      color: var(--muted);
+      margin-bottom: 8px;
+    }
+
+    .card-value {
+      font-size: 26px;
+      font-weight: 700;
+      font-variant-numeric: tabular-nums;
+    }
+
+    .card-value.green { color: var(--green); }
+    .card-value.red   { color: var(--red); }
+    .card-value.blue  { color: var(--blue); }
+
+    .card-sub {
+      font-size: 12px;
+      color: var(--muted);
+      margin-top: 4px;
+    }
+
+    /* ---- Two-column layout ---- */
+    .grid-2 {
+      display: grid;
+      grid-template-columns: 2fr 1fr;
+      gap: 16px;
+      margin-bottom: 16px;
+    }
+
+    @media (max-width: 900px) {
+      .grid-2 { grid-template-columns: 1fr; }
+    }
+
+    /* ---- Panels ---- */
+    .panel {
+      background: var(--surface);
+      border: 1px solid var(--border);
+      border-radius: var(--radius);
+      overflow: hidden;
+    }
+
+    .panel-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-size: 13px;
+      font-weight: 600;
+      color: var(--muted);
+      text-transform: uppercase;
+      letter-spacing: 0.8px;
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+    }
+
+    .panel-body { padding: 16px; }
+
+    canvas { width: 100% !important; }
+
+    /* ---- Feed ---- */
+    .feed { list-style: none; }
+
+    .feed-item {
+      display: grid;
+      grid-template-columns: 70px 45px 1fr auto;
+      gap: 8px;
+      align-items: center;
+      padding: 8px 0;
+      border-bottom: 1px solid var(--border);
+      font-size: 12px;
+    }
+
+    .feed-item:last-child { border-bottom: none; }
+
+    .badge {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      font-weight: 700;
+      letter-spacing: 0.5px;
+    }
+
+    .badge-buy  { background: var(--green-dim); color: var(--green); }
+    .badge-sell { background: var(--red-dim);   color: var(--red);   }
+
+    .feed-token { color: var(--muted); font-family: monospace; font-size: 11px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+    .feed-price { color: var(--text); text-align: right; font-variant-numeric: tabular-nums; }
+    .feed-time  { color: var(--muted); font-size: 11px; }
+
+    /* ---- Table ---- */
+    table { width: 100%; border-collapse: collapse; font-size: 12px; }
+    th { text-align: left; padding: 8px 12px; color: var(--muted); font-weight: 500; border-bottom: 1px solid var(--border); font-size: 11px; text-transform: uppercase; letter-spacing: 0.6px; }
+    td { padding: 9px 12px; border-bottom: 1px solid var(--border); }
+    tr:last-child td { border-bottom: none; }
+    tr:hover td { background: rgba(255,255,255,0.02); }
+
+    .pnl-pos { color: var(--green); font-weight: 600; }
+    .pnl-neg { color: var(--red);   font-weight: 600; }
+
+    /* ---- Empty state ---- */
+    .empty {
+      text-align: center;
+      padding: 32px;
+      color: var(--muted);
+      font-size: 13px;
+    }
+
+    .tag-mode {
+      display: inline-block;
+      padding: 2px 8px;
+      border-radius: 4px;
+      font-size: 11px;
+      background: rgba(88,166,255,0.15);
+      color: var(--blue);
+      font-weight: 600;
+    }
+
+    footer {
+      text-align: center;
+      padding: 20px;
+      color: var(--muted);
+      font-size: 12px;
+      border-top: 1px solid var(--border);
+      margin-top: 24px;
+    }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>&#9670; Polymarket Copy-Bot</h1>
+  <div class="header-right">
+    <span><span class="status-dot" id="statusDot"></span> <span id="statusText">Connecting...</span></span>
+    <span>Refresh in <span id="countdown">5</span>s</span>
+    <span id="updatedAt"></span>
+  </div>
+</header>
+
+<main>
+  <!-- Summary cards -->
+  <div class="cards" id="cards">
+    <div class="card">
+      <div class="card-label">Total PnL</div>
+      <div class="card-value" id="totalPnl">—</div>
+      <div class="card-sub" id="resolvedFills">— resolved trades</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Win Rate</div>
+      <div class="card-value blue" id="winRate">—</div>
+      <div class="card-sub" id="winsLosses">— wins / — losses</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Open Positions</div>
+      <div class="card-value" id="openPos">—</div>
+      <div class="card-sub" id="exposure">— fills total</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Approved / Rejected</div>
+      <div class="card-value blue" id="hitRate">—</div>
+      <div class="card-sub" id="approvedRejected">— / — decisions</div>
+    </div>
+    <div class="card">
+      <div class="card-label">Avg Slippage</div>
+      <div class="card-value" id="avgSlippage">—</div>
+      <div class="card-sub">vs alpha price</div>
+    </div>
+  </div>
+
+  <!-- Chart + recent signals -->
+  <div class="grid-2">
+    <div class="panel">
+      <div class="panel-header">
+        Cumulative PnL
+        <span class="tag-mode" id="modeTag">PAPER</span>
+      </div>
+      <div class="panel-body">
+        <canvas id="pnlChart" height="220"></canvas>
+      </div>
+    </div>
+
+    <div class="panel">
+      <div class="panel-header">Recent Signals</div>
+      <div class="panel-body" style="padding:0">
+        <ul class="feed" id="signalFeed">
+          <li class="empty">No fills yet</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <!-- Open positions table -->
+  <div class="panel">
+    <div class="panel-header">Open Positions</div>
+    <div id="openTableWrapper">
+      <div class="empty">No open positions</div>
+    </div>
+  </div>
+</main>
+
+<footer>Polymarket Copy-Bot &mdash; paper-trade first, always.</footer>
+
+<script>
+// ---- Demo data (shown when API is unreachable) ----
+const DEMO = {
+  summary: {
+    total_decisions: 142, approved: 38, rejected: 104,
+    hit_rate: 0.268, total_fills: 38, resolved: 31,
+    wins: 19, losses: 12, win_rate: 0.613,
+    total_pnl: 47.82, avg_slippage: 0.0031, open_positions: 7,
+  },
+  pnl_series: (() => {
+    const pts = [];
+    let v = 0;
+    const now = Date.now() / 1000;
+    for (let i = 30; i >= 0; i--) {
+      v += (Math.random() - 0.38) * 4;
+      pts.push({ t: now - i * 3600, pnl: parseFloat(v.toFixed(2)) });
+    }
+    return pts;
+  })(),
+  recent_fills: [
+    { timestamp: Date.now()/1000 - 120, side:"BUY",  token_id:"0xabc123def456", actual_fill_price:0.634, actual_fill_size:20, wallet_copied:"0xAlpha1" },
+    { timestamp: Date.now()/1000 - 340, side:"SELL", token_id:"0xdef456abc789", actual_fill_price:0.812, actual_fill_size:15, wallet_copied:"0xAlpha2" },
+    { timestamp: Date.now()/1000 - 720, side:"BUY",  token_id:"0x111222333444", actual_fill_price:0.421, actual_fill_size:20, wallet_copied:"0xAlpha3" },
+    { timestamp: Date.now()/1000 - 1200, side:"BUY", token_id:"0x555666777888", actual_fill_price:0.711, actual_fill_size:20, wallet_copied:"0xAlpha1" },
+    { timestamp: Date.now()/1000 - 1800, side:"SELL",token_id:"0x999aaabbbccc", actual_fill_price:0.295, actual_fill_size:20, wallet_copied:"0xAlpha4" },
+  ],
+  open_positions: [
+    { token_id:"0xabc123def456", side:"BUY", actual_fill_price:0.634, actual_fill_size:20, wallet_copied:"0xAlpha1", timestamp: Date.now()/1000 - 120 },
+    { token_id:"0x111222333444", side:"BUY", actual_fill_price:0.421, actual_fill_size:20, wallet_copied:"0xAlpha3", timestamp: Date.now()/1000 - 720 },
+    { token_id:"0x555666777888", side:"BUY", actual_fill_price:0.711, actual_fill_size:20, wallet_copied:"0xAlpha1", timestamp: Date.now()/1000 - 1200 },
+  ],
+  updated_at: Date.now() / 1000,
+};
+
+// ---- Chart setup ----
+let chart = null;
+
+function initChart(series) {
+  const ctx = document.getElementById("pnlChart").getContext("2d");
+  if (chart) chart.destroy();
+
+  const labels = series.map(p => {
+    const d = new Date(p.t * 1000);
+    return d.toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  });
+  const data = series.map(p => p.pnl);
+  const lastVal = data[data.length - 1] || 0;
+  const lineColor = lastVal >= 0 ? "#3fb950" : "#f85149";
+  const fillColor = lastVal >= 0 ? "rgba(63,185,80,0.08)" : "rgba(248,81,73,0.08)";
+
+  chart = new Chart(ctx, {
+    type: "line",
+    data: {
+      labels,
+      datasets: [{
+        label: "Cumulative PnL ($)",
+        data,
+        borderColor: lineColor,
+        backgroundColor: fillColor,
+        borderWidth: 2,
+        pointRadius: 2,
+        pointHoverRadius: 5,
+        fill: true,
+        tension: 0.3,
+      }],
+    },
+    options: {
+      responsive: true,
+      animation: { duration: 300 },
+      plugins: {
+        legend: { display: false },
+        tooltip: {
+          callbacks: {
+            label: ctx => ` $${ctx.parsed.y.toFixed(2)}`,
+          },
+        },
+      },
+      scales: {
+        x: {
+          ticks: { color: "#8b949e", maxTicksLimit: 8, font: { size: 11 } },
+          grid: { color: "rgba(48,54,61,0.6)" },
+        },
+        y: {
+          ticks: {
+            color: "#8b949e",
+            font: { size: 11 },
+            callback: v => `$${v.toFixed(0)}`,
+          },
+          grid: { color: "rgba(48,54,61,0.6)" },
+        },
+      },
+    },
+  });
+}
+
+// ---- Render helpers ----
+function fmtTime(ts) {
+  return new Date(ts * 1000).toLocaleTimeString([], { hour: "2-digit", minute: "2-digit", second: "2-digit" });
+}
+
+function fmtPct(v) { return (v * 100).toFixed(1) + "%"; }
+
+function renderCards(s) {
+  const pnl = s.total_pnl;
+  const pnlEl = document.getElementById("totalPnl");
+  pnlEl.textContent = (pnl >= 0 ? "+" : "") + "$" + Math.abs(pnl).toFixed(2);
+  pnlEl.className = "card-value " + (pnl >= 0 ? "green" : "red");
+  document.getElementById("resolvedFills").textContent = s.resolved + " resolved trades";
+
+  document.getElementById("winRate").textContent = fmtPct(s.win_rate);
+  document.getElementById("winsLosses").textContent = s.wins + " wins / " + s.losses + " losses";
+
+  document.getElementById("openPos").textContent = s.open_positions;
+  document.getElementById("exposure").textContent = s.total_fills + " fills total";
+
+  document.getElementById("hitRate").textContent = fmtPct(s.hit_rate);
+  document.getElementById("approvedRejected").textContent =
+    s.approved + " approved / " + s.rejected + " rejected";
+
+  const slip = s.avg_slippage;
+  const slipEl = document.getElementById("avgSlippage");
+  slipEl.textContent = (slip >= 0 ? "+" : "") + slip.toFixed(4);
+  slipEl.className = "card-value " + (slip <= 0.01 ? "green" : slip <= 0.02 ? "" : "red");
+}
+
+function renderFeed(fills) {
+  const ul = document.getElementById("signalFeed");
+  if (!fills || fills.length === 0) {
+    ul.innerHTML = '<li class="empty">No fills yet</li>';
+    return;
+  }
+  ul.innerHTML = fills.slice(0, 12).map(f => {
+    const badge = f.side === "BUY"
+      ? '<span class="badge badge-buy">BUY</span>'
+      : '<span class="badge badge-sell">SELL</span>';
+    const token = (f.token_id || "").slice(0, 18) + "...";
+    const price = "$" + (f.actual_fill_size || 0).toFixed(0)
+      + " @ " + (f.actual_fill_price || 0).toFixed(4);
+    return `<li class="feed-item">
+      <span class="feed-time">${fmtTime(f.timestamp)}</span>
+      ${badge}
+      <span class="feed-token">${token}</span>
+      <span class="feed-price">${price}</span>
+    </li>`;
+  }).join("");
+}
+
+function renderOpenPositions(positions) {
+  const wrap = document.getElementById("openTableWrapper");
+  if (!positions || positions.length === 0) {
+    wrap.innerHTML = '<div class="empty">No open positions</div>';
+    return;
+  }
+  const rows = positions.map(p => {
+    const badge = p.side === "BUY"
+      ? '<span class="badge badge-buy">BUY</span>'
+      : '<span class="badge badge-sell">SELL</span>';
+    return `<tr>
+      <td>${badge}</td>
+      <td style="font-family:monospace;font-size:11px;color:#8b949e">${(p.token_id||"").slice(0,20)}...</td>
+      <td>$${(p.actual_fill_size||0).toFixed(2)}</td>
+      <td>${(p.actual_fill_price||0).toFixed(4)}</td>
+      <td style="color:#8b949e">${(p.wallet_copied||"").slice(0,12)}...</td>
+      <td style="color:#8b949e">${fmtTime(p.timestamp)}</td>
+    </tr>`;
+  }).join("");
+  wrap.innerHTML = `<table>
+    <thead><tr>
+      <th>Side</th><th>Token</th><th>Size</th><th>Entry</th><th>Wallet</th><th>Time</th>
+    </tr></thead>
+    <tbody>${rows}</tbody>
+  </table>`;
+}
+
+function render(data, isDemo) {
+  const dot = document.getElementById("statusDot");
+  const txt = document.getElementById("statusText");
+  if (isDemo) {
+    dot.className = "status-dot offline";
+    txt.textContent = "Offline (demo data)";
+  } else {
+    dot.className = "status-dot";
+    txt.textContent = "Live";
+    document.getElementById("updatedAt").textContent =
+      "Updated " + fmtTime(data.updated_at);
+  }
+
+  renderCards(data.summary);
+  initChart(data.pnl_series || []);
+  renderFeed(data.recent_fills || []);
+  renderOpenPositions(data.open_positions || []);
+}
+
+// ---- Countdown + auto-refresh ----
+let remaining = 5;
+let isDemo = false;
+
+async function refresh() {
+  try {
+    const resp = await fetch("/api/status", { signal: AbortSignal.timeout(4000) });
+    if (!resp.ok) throw new Error("HTTP " + resp.status);
+    const data = await resp.json();
+    isDemo = false;
+    render(data, false);
+  } catch (_) {
+    isDemo = true;
+    render(DEMO, true);
+  }
+  remaining = 5;
+}
+
+setInterval(() => {
+  remaining--;
+  document.getElementById("countdown").textContent = remaining;
+  if (remaining <= 0) refresh();
+}, 1000);
+
+// Initial load
+refresh();
+</script>
+</body>
+</html>

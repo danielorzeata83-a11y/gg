@@ -1,0 +1,10 @@
+.env
+*.pyc
+__pycache__/
+alpha_wallets.json
+ledger.jsonl
+bot.log
+*.egg-info/
+dist/
+build/
+.pytest_cache/
