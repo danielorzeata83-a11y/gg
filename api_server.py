@@ -7,11 +7,13 @@ import time
 import argparse
 from pathlib import Path
 from flask import Flask, jsonify, send_from_directory
+from signal_log import read_signals
 
 app = Flask(__name__, static_folder=".")
 
 LEDGER_PATH = "ledger.jsonl"
 WATCHLIST_PATH = "alpha_wallets.json"
+SIGNALS_PATH = "signals.jsonl"
 
 
 def read_ledger():
@@ -54,12 +56,13 @@ def status():
         running += r.get("resolved_pnl") or 0
         pnl_series.append({"t": r.get("timestamp", 0), "pnl": round(running, 4)})
 
-    # Recent signals (last 20 fills)
+    # Recent fills
     recent = sorted(fills, key=lambda x: x.get("timestamp", 0), reverse=True)[:20]
 
-    # Open positions
-    resolved_tokens = {r["token_id"] for r in resolutions}
-    open_positions = [f for f in fills if f["token_id"] not in resolved_tokens]
+    # Open positions (fills without a matching resolution)
+    resolved_keys = {(r["token_id"], r["wallet_copied"]) for r in resolutions}
+    open_positions = [f for f in fills
+                      if (f["token_id"], f.get("wallet_copied", "")) not in resolved_keys]
 
     return jsonify({
         "summary": {
@@ -83,20 +86,53 @@ def status():
     })
 
 
+@app.route("/api/signals")
+def signals():
+    """Live signal feed — what alpha wallets traded + bot decision."""
+    rows = read_signals(SIGNALS_PATH, limit=100)
+    rows.reverse()  # newest first
+    return jsonify({
+        "signals": rows,
+        "count": len(rows),
+        "updated_at": time.time(),
+    })
+
+
+@app.route("/api/watchlist")
+def watchlist():
+    """Return the current alpha watchlist."""
+    path = Path(WATCHLIST_PATH)
+    if not path.exists():
+        return jsonify({"wallets": [], "count": 0})
+    try:
+        with open(path) as f:
+            data = json.load(f)
+        return jsonify({"wallets": data, "count": len(data)})
+    except Exception:
+        return jsonify({"wallets": [], "count": 0})
+
+
 @app.route("/")
 def index():
     return send_from_directory(".", "dashboard.html")
 
 
+@app.route("/<path:filename>")
+def static_files(filename):
+    return send_from_directory(".", filename)
+
+
 def main():
-    global LEDGER_PATH, WATCHLIST_PATH
+    global LEDGER_PATH, WATCHLIST_PATH, SIGNALS_PATH
     ap = argparse.ArgumentParser()
     ap.add_argument("--ledger", default="ledger.jsonl")
     ap.add_argument("--watchlist", default="alpha_wallets.json")
+    ap.add_argument("--signals", default="signals.jsonl")
     ap.add_argument("--port", type=int, default=8080)
     args = ap.parse_args()
     LEDGER_PATH = args.ledger
     WATCHLIST_PATH = args.watchlist
+    SIGNALS_PATH = args.signals
     print(f"Dashboard at http://localhost:{args.port}")
     app.run(host="0.0.0.0", port=args.port, debug=False)
 

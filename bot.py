@@ -23,6 +23,7 @@ from decision import DecisionEngine
 from executor_paper import PaperExecutor
 from executor_live import LiveExecutor
 from watch_onchain import AlphaWatcher
+from signal_log import write_signal
 
 load_dotenv()
 
@@ -96,6 +97,15 @@ class Bot:
 
         status = "APPROVED" if decision.approved else f"REJECTED ({decision.reason})"
         self.logger.info("DECISION: %s", status)
+
+        write_signal(signal, {
+            "approved": decision.approved,
+            "reason": decision.reason,
+            "price": decision.price,
+            "size_usdc": decision.size_usdc,
+            "slippage": decision.slippage,
+            "alpha_price": decision.alpha_price,
+        })
 
         if decision.approved:
             self.executor.execute(decision, signal)
