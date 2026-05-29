@@ -167,11 +167,29 @@ class WalletProfile:
     sybil_risk: float = 0.0            # 0..1, pool-level co-trading overlap score
     slippage_proxy: float = 0.0        # avg fill-price dispersion (approximation)
 
+    # --- 📊 Trader Classification ---
+    trader_type: str = "UNKNOWN"         # BOT / HIGH_FREQ / MANUAL / CASUAL
+    trades_per_month: float = 0.0        # derived from trades_per_day * 30
+    wallet_age_score: float = 0.0        # -0.5..+0.1 bonus/penalty for age
+    recent_30d_roi: float = 0.0          # ROI in last 30 days
+    performance_decay_score: float = 0.0 # -0.4..+0.1 based on decay detector
+    liquidity_score: float = 0.0         # -0.3..+0.1 based on position/market ratio
+
+    # --- 🚩 Risk Assessment ---
+    risk_flags: list = field(default_factory=list)   # list of triggered RED_FLAG names
+    risk_level: str = "🟢 LOW"           # 🔴 HIGH / 🟡 MEDIUM / 🟢 LOW
+    copy_recommendation: str = "✅ Consider"
+
+    # --- 🧺 Pool-Level Consensus ---
+    basket_consensus_score: float = 0.0  # -0.1..+0.2 pool agreement bonus
+
     # --- Composite ---
     alpha_score: float = 0.0
 
     def to_row(self):
-        return asdict(self)
+        d = asdict(self)
+        # risk_flags is a list — keep as-is for JSON serialization
+        return d
 
 
 def _fetch_all_closed(wallet, hard_cap=300):
@@ -442,6 +460,128 @@ def _detect_martingale(closed_positions):
     return events >= 1, events
 
 
+def _wallet_age_score(wallet_age_days: float) -> float:
+    """Penalizează wallet-urile noi, bonus pentru vechime >90 zile."""
+    if wallet_age_days < 7:
+        return -0.5
+    elif wallet_age_days < 30:
+        return -0.2
+    elif wallet_age_days < 90:
+        return 0.0
+    else:
+        return 0.1
+
+
+def _classify_trader_type(trades_per_month: float) -> str:
+    """Identifică dacă e bot, manual trader sau gambler."""
+    if trades_per_month > 300:
+        return "BOT"
+    elif trades_per_month > 100:
+        return "HIGH_FREQ"
+    elif trades_per_month < 20:
+        return "CASUAL"
+    else:
+        return "MANUAL"
+
+
+def _compute_recent_roi(closed_positions) -> float:
+    """ROI din ultimele 30 de zile (piețe rezolvate în această fereastră)."""
+    cutoff = datetime.utcnow().timestamp() - 30 * 86400
+    recent = []
+    for p in closed_positions:
+        end_str = p.get("endDate") or p.get("updatedAt") or ""
+        dt = _parse_dt(end_str)
+        if not dt:
+            continue
+        if dt.timestamp() >= cutoff:
+            recent.append(p)
+    if not recent:
+        return 0.0
+    cost = sum((p.get("avgPrice") or 0) * (p.get("totalBought") or 0) for p in recent)
+    pnl = sum(p.get("realizedPnl") or 0 for p in recent)
+    return round(pnl / cost, 4) if cost > 0 else 0.0
+
+
+def _performance_decay_score(recent_30d_roi: float, all_time_roi: float) -> float:
+    """Detectează dacă strategia se degradează față de all-time ROI."""
+    at = all_time_roi / 100.0  # convert % -> ratio
+    if at > 0.5 and recent_30d_roi < 0:
+        return -0.4   # 🔴 Death spiral
+    elif at > 0 and recent_30d_roi < at * 0.3:
+        return -0.2   # 🟡 Edge decay
+    else:
+        return 0.1    # ✅ Consistent
+
+
+def _liquidity_score(max_position_pct: float) -> float:
+    """Evită piețele unde wallet-ul domină volumul (devine exit liquidity)."""
+    if max_position_pct > 0.10:
+        return -0.3   # 🚩 dominanță de piață
+    elif max_position_pct > 0.05:
+        return -0.1   # ⚠️ atenție
+    else:
+        return 0.1    # ✅ lichiditate sănătoasă
+
+
+def _compute_red_flags(prof) -> tuple[list, str, str]:
+    """
+    Evaluează RED_FLAGS și returnează (flags, risk_level, copy_recommendation).
+    max_win aproximat ca best_market_pnl, self_interaction_ratio aproximat via sybil_risk.
+    """
+    RED_FLAGS = {
+        "FRESH_WALLET":        lambda w: w.wallet_age_days < 7,
+        "LOW_LIQUIDITY":       lambda w: w.max_position_pct > 0.10,
+        "BOT_LIKE_FREQ":       lambda w: w.trades_per_month > 300,
+        "DEATH_SPIRAL":        lambda w: (w.realized_pnl > 1000
+                                          and w.recent_30d_roi < -0.10),
+        "GAMBLOR_PATTERN":     lambda w: (w.win_rate < 0.40
+                                          and w.realized_pnl > 0
+                                          and (w.best_market_pnl / w.realized_pnl) > 0.70),
+        "WASH_TRADING_SUSPECT": lambda w: w.sybil_risk > 0.05,
+    }
+    triggered = [name for name, check in RED_FLAGS.items() if check(prof)]
+    if len(triggered) >= 2:
+        level = "🔴 HIGH"
+        rec = "❌ Avoid"
+    elif triggered:
+        level = "🟡 MEDIUM"
+        rec = "⚠️ Small size"
+    else:
+        level = "🟢 LOW"
+        rec = "✅ Consider"
+    return triggered, level, rec
+
+
+def compute_basket_consensus(profiles) -> None:
+    """
+    Pool-level: pentru fiecare wallet, calculează cât % din ceilalți alpha wallets
+    tranzacționează în aceleași piețe. Bonus dacă >80% agreează, penalizare dacă <30%.
+    Scrie basket_consensus_score direct pe fiecare profil.
+    """
+    if len(profiles) < 3:
+        return
+    market_sets = [getattr(p, "_market_set", set()) for p in profiles]
+    for i, prof in enumerate(profiles):
+        ms = market_sets[i]
+        if not ms:
+            prof.basket_consensus_score = 0.0
+            continue
+        agreements = 0
+        for j, other_ms in enumerate(market_sets):
+            if i == j or not other_ms:
+                continue
+            overlap = len(ms & other_ms) / len(ms)
+            if overlap >= 0.3:  # tranzacționează în >=30% din aceleași piețe
+                agreements += 1
+        pct = agreements / (len(profiles) - 1)
+        if pct >= 0.80:
+            prof.basket_consensus_score = 0.2
+        elif pct <= 0.30:
+            prof.basket_consensus_score = -0.1
+        else:
+            prof.basket_consensus_score = 0.0
+
+
 def profile_wallet(cand):
     prof = WalletProfile(
         proxyWallet=cand["proxyWallet"],
@@ -488,10 +628,22 @@ def profile_wallet(cand):
     # Compute extended metrics from raw position rows
     _compute_extended_metrics(prof, closed, openp)
 
-    # Revenge-trading red flag (size spikes after losses)
+    # Behavioral flags
     prof.revenge_flag, prof.revenge_events = _detect_revenge_trading(closed)
     prof.fomo_flag, prof.fomo_events = _detect_fomo_trading(closed)
     prof.martingale_flag, prof.martingale_events = _detect_martingale(closed)
+
+    # New grading metrics
+    prof.trades_per_month = round(prof.trades_per_day * 30, 1)
+    prof.trader_type = _classify_trader_type(prof.trades_per_month)
+    prof.wallet_age_score = _wallet_age_score(prof.wallet_age_days)
+    prof.recent_30d_roi = _compute_recent_roi(closed)
+    prof.performance_decay_score = _performance_decay_score(
+        prof.recent_30d_roi, prof.roi_realized)
+    prof.liquidity_score = _liquidity_score(prof.max_position_pct)
+
+    # Red flags evaluated here (sybil_risk still 0 — will be recomputed after pool pass)
+    prof.risk_flags, prof.risk_level, prof.copy_recommendation = _compute_red_flags(prof)
 
     # Stash traded markets for pool-level sybil detection in main().
     # Non-dataclass attribute: asdict()/to_row() ignore it (not a declared field).
@@ -512,52 +664,72 @@ def profile_wallet(cand):
 
 def compute_alpha_score(p: WalletProfile) -> float:
     """
-    Composite skill score. Designed to REWARD consistency and breadth, and
-    PUNISH one-hit-wonders and pure whales.
+    Composite skill score v2 — weights aligned with grila din CSV:
+      ROI 25% | WinRate 20% | ProfitFactor 20% | Consistency 20% | Sortino 15%
+      + breadth bonus, accuracy, Brier, Calmar, age bonus, consensus
+      - concentration, drawdown, behavioral + RED_FLAG penalties
 
-    Components:
-      + realized PnL (log-scaled)
-      + win rate above 50%
-      + breadth (distinct resolved markets)
-      + profit factor (log-scaled)
-      + consistency score
-      + accuracy vs odds
-      + risk-adjusted bonuses (Brier, Sortino, Calmar)
-      - concentration penalty
-      - max drawdown penalty
-      - red-flag penalties (revenge trading, sybil/co-trading risk)
+    Target range: 0..10 for qualified wallets.
     """
     if p.resolved_markets < MIN_MARKETS:
         return 0.0
     if p.realized_pnl <= 0:
         return 0.0
 
-    pnl_term         = math.log10(p.realized_pnl + 10)           # 1..7
-    winrate_term     = (p.win_rate - 0.5) * 4                    # -2..+2
-    breadth_term     = math.log10(p.resolved_markets)            # 0.7..2.7
-    conc_penalty     = p.concentration * 2.0                     # 0..2
-    pf_term          = min(math.log10(p.profit_factor + 0.01) * 2, 2) if p.profit_factor > 0 else -1
-    consistency_term = p.consistency_score * 1.5                 # -1.5..1.5
-    dd_penalty       = p.max_drawdown * 2.0                      # 0..2
-    accuracy_term    = p.accuracy_vs_odds * 3                    # -3..+3
+    # ── Core components (weights from CSV) ──────────────────────────────────
+    # ROI 25% — log-scaled so $10k and $1M don't dominate equally
+    roi_term         = math.log10(max(p.realized_pnl, 1) + 10) * 0.25 * 4   # ~1..7 → *1.0
 
-    # Risk-adjusted bonuses
-    brier_term   = max(0, (0.25 - p.brier_score) * 8) if p.brier_score > 0 else 0   # <0.25 good, scaled 0..2
-    sortino_term = min(max(p.sortino_ratio, -2), 2)                                  # clamp -2..2
-    calmar_term  = min(p.calmar_ratio, 2) if p.calmar_ratio > 0 else 0               # 0..2
+    # Win Rate 20% — centered at 50%, scaled to ±2
+    winrate_term     = (p.win_rate - 0.5) * 4 * 0.20 / 0.20                 # -2..+2 at 20% weight
 
-    # Red-flag penalties
+    # Profit Factor 20%
+    pf_term          = (min(math.log10(p.profit_factor + 0.01) * 2, 2) if p.profit_factor > 0 else -1)
+
+    # Consistency 20%
+    consistency_term = p.consistency_score * 1.5                             # -1.5..+1.5
+
+    # Sortino 15%
+    sortino_term     = min(max(p.sortino_ratio, -2), 2) * 0.75               # -1.5..+1.5
+
+    # ── Bonus terms ─────────────────────────────────────────────────────────
+    breadth_term     = math.log10(p.resolved_markets)                        # 0.7..2.7
+    accuracy_term    = p.accuracy_vs_odds * 2                                # -2..+2
+    brier_term       = max(0, (0.25 - p.brier_score) * 6) if p.brier_score > 0 else 0
+    calmar_term      = min(p.calmar_ratio, 1.5) if p.calmar_ratio > 0 else 0
+
+    # New grading bonuses (from article)
+    age_bonus        = p.wallet_age_score                                    # -0.5..+0.1
+    decay_bonus      = p.performance_decay_score                             # -0.4..+0.1
+    liquidity_bonus  = p.liquidity_score                                     # -0.3..+0.1
+    consensus_bonus  = p.basket_consensus_score                              # -0.1..+0.2
+
+    # Trader type penalty: bots and casuals are harder/riskier to copy
+    trader_penalty   = 1.5 if p.trader_type == "BOT" else (
+                       0.8 if p.trader_type == "HIGH_FREQ" else
+                       0.5 if p.trader_type == "CASUAL" else 0)
+
+    # ── Structural penalties ─────────────────────────────────────────────────
+    conc_penalty     = p.concentration * 2.0
+    dd_penalty       = p.max_drawdown * 2.0
+
+    # ── Behavioral penalties ─────────────────────────────────────────────────
     revenge_penalty    = 1.5 if p.revenge_flag else 0
     fomo_penalty       = 1.0 if p.fomo_flag else 0
     martingale_penalty = 1.5 if p.martingale_flag else 0
-    sybil_penalty      = p.sybil_risk * 3.0    # 0..3, heavy — coordinated wallets are dangerous to copy
+
+    # ── Systemic risk ────────────────────────────────────────────────────────
+    sybil_penalty    = p.sybil_risk * 3.0
+    # RED_FLAGS: each additional flag beyond the first adds 0.5
+    flag_penalty     = max(0, len(p.risk_flags) - 1) * 0.5
 
     return round(
-        pnl_term + winrate_term + breadth_term + pf_term
-        + consistency_term + accuracy_term
-        + brier_term + sortino_term + calmar_term
+        roi_term + winrate_term + pf_term + consistency_term + sortino_term
+        + breadth_term + accuracy_term + brier_term + calmar_term
+        + age_bonus + decay_bonus + liquidity_bonus + consensus_bonus
         - conc_penalty - dd_penalty
-        - revenge_penalty - fomo_penalty - martingale_penalty - sybil_penalty,
+        - revenge_penalty - fomo_penalty - martingale_penalty
+        - trader_penalty - sybil_penalty - flag_penalty,
         3
     )
 
@@ -594,11 +766,15 @@ def main():
               f"{c.get('userName','')[:18]:<18} markets={prof.resolved_markets:>3} "
               f"winrate={prof.win_rate:.0%} realized=${prof.realized_pnl:>12,.0f}")
 
-    # Pool-level sybil/co-trading risk must be computed across the WHOLE pool
-    # BEFORE scoring, because sybil_risk feeds the composite alpha score.
-    onchain_metrics.compute_sybil_risk(profiles)
+    # Pool-level metrics — must run BEFORE scoring
+    onchain_metrics.compute_sybil_risk(profiles)  # fills sybil_risk on each profile
+    compute_basket_consensus(profiles)             # fills basket_consensus_score
 
-    # Now that sybil_risk is known for every wallet, compute the final score.
+    # Re-evaluate RED_FLAGS now that sybil_risk is known (WASH_TRADING_SUSPECT uses it)
+    for prof in profiles:
+        prof.risk_flags, prof.risk_level, prof.copy_recommendation = _compute_red_flags(prof)
+
+    # Final composite score
     for prof in profiles:
         prof.alpha_score = compute_alpha_score(prof)
 
@@ -607,14 +783,14 @@ def main():
     top = qualified[:args.top]
 
     print(f"\n[3/3] {len(qualified)} wallets qualified; keeping top {len(top)}\n")
-    print(f"{'RANK':<5}{'WALLET':<14}{'NAME':<18}{'SCORE':>7}{'WINRATE':>9}"
-          f"{'MKTS':>6}{'REALIZED PNL':>16}{'CONC':>7}{'PF':>6}{'DD':>7}")
-    print("-" * 95)
+    print(f"{'RANK':<5}{'WALLET':<14}{'NAME':<16}{'SCORE':>7}{'WINRATE':>9}"
+          f"{'MKTS':>6}{'PNL':>12}{'TYPE':<10}{'RISK':<12}{'FLAGS'}")
+    print("-" * 105)
     for rank, p in enumerate(top, 1):
-        print(f"{rank:<5}{p.proxyWallet[:12]:<14}{(p.userName or '-')[:16]:<18}"
+        flags = ",".join(p.risk_flags) if p.risk_flags else "—"
+        print(f"{rank:<5}{p.proxyWallet[:12]:<14}{(p.userName or '-')[:14]:<16}"
               f"{p.alpha_score:>7}{p.win_rate:>8.0%}{p.resolved_markets:>6}"
-              f"${p.realized_pnl:>14,.0f}{p.concentration:>7.2f}"
-              f"{p.profit_factor:>6.2f}{p.max_drawdown:>7.2%}")
+              f"${p.realized_pnl:>10,.0f}  {p.trader_type:<10}{p.risk_level:<12}{flags}")
 
     with open(args.out, "w") as f:
         json.dump([p.to_row() for p in top], f, indent=2)
