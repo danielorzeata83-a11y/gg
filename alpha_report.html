@@ -387,7 +387,7 @@
       <th colspan="2" class="cg-edge sep-col">🎯 Edge</th>
       <th colspan="4" class="cg-activity sep-col">🔄 Activity</th>
       <th colspan="3" class="cg-risk sep-col">🛡️ Risk</th>
-      <th colspan="4" class="cg-radj sep-col">📐 Risk-Adjusted</th>
+      <th colspan="6" class="cg-radj sep-col">📐 Risk-Adjusted</th>
       <th colspan="3" class="cg-verify sep-col">🔗 Verification</th>
     </tr>
     <tr class="col-headers">
@@ -416,7 +416,9 @@
       <th data-col="yes_bias" data-tip="(YES trades – NO trades) / total.&#10;+1 = always YES · -1 = always NO · 0 = balanced">YES Bias</th>
       <!-- Risk-Adjusted -->
       <th data-col="brier_score" class="sep-col" data-tip="Mean (entry_price – outcome)². Probabilistic accuracy.&#10;LOWER is better! Green < 0.2 · Yellow 0.2–0.3 · Red > 0.3">Brier</th>
-      <th data-col="sortino_ratio" data-tip="Mean per-market ROI / downside deviation.&#10;Rewards return without punishing upside volatility.&#10;Green > 2 · Yellow 0–2 · Red < 0">Sortino</th>
+      <th data-col="avg_market_roi" data-tip="Mean ROI across all resolved markets.&#10;Building block for Sortino &amp; Consistency.&#10;Green > 0.15 · Yellow 0–0.15 · Red ≤ 0">Avg ROI</th>
+      <th data-col="downside_deviation" data-tip="sqrt(mean of squared negative ROIs).&#10;Sortino denominator — lower = less downside risk.&#10;Green < 0.15 · Yellow 0.15–0.30 · Red > 0.30">DD-Dev</th>
+      <th data-col="sortino_ratio" data-tip="avg_market_roi / downside_deviation.&#10;Rewards return without punishing upside volatility.&#10;Green > 2 · Yellow 0–2 · Red < 0">Sortino</th>
       <th data-col="calmar_ratio" data-tip="Annualized ROI / max drawdown.&#10;Return per unit of worst-case loss.&#10;Green > 1 · Yellow 0–1 · Red < 0">Calmar</th>
       <th data-col="capital_turnover" data-tip="Total volume / total cost basis. How hard capital is recycled.">Turnover</th>
       <!-- Verification -->
@@ -653,6 +655,12 @@ function render() {
     // Brier (LOWER is better!): only color when a value exists
     const brier = w.brier_score || 0;
     const brierClass = brier <= 0 ? 'cell-neutral' : brier < 0.2 ? 'cell-green' : brier <= 0.3 ? 'cell-yellow' : 'cell-red';
+    // Avg market ROI
+    const avgRoi = w.avg_market_roi || 0;
+    const avgRoiClass = avgRoi > 0.15 ? 'cell-green' : avgRoi > 0 ? 'cell-yellow' : 'cell-red';
+    // Downside deviation (lower is better)
+    const ddDev = w.downside_deviation || 0;
+    const ddDevClass = ddDev <= 0 ? 'cell-neutral' : ddDev < 0.15 ? 'cell-green' : ddDev <= 0.30 ? 'cell-yellow' : 'cell-red';
     // Sortino
     const sortinoClass = (w.sortino_ratio||0) > 2 ? 'cell-green' : (w.sortino_ratio||0) >= 0 ? 'cell-yellow' : 'cell-red';
     // Calmar
@@ -695,6 +703,8 @@ function render() {
       <td style="color:var(--text2)">${w.max_position_pct!=null ? pct(w.max_position_pct) : '—'}</td>
       <td class="${ybClass}">${ybStr}</td>
       <td class="sep-col ${brierClass}">${brier > 0 ? brier.toFixed(3) : '—'}</td>
+      <td class="${avgRoiClass}">${avgRoi !== 0 ? (avgRoi*100).toFixed(1)+'%' : '—'}</td>
+      <td class="${ddDevClass}">${ddDev > 0 ? ddDev.toFixed(3) : '—'}</td>
       <td class="${sortinoClass}">${(w.sortino_ratio||0).toFixed(2)}</td>
       <td class="${calmarClass}">${(w.calmar_ratio||0).toFixed(2)}</td>
       <td style="color:var(--text2)">${(w.capital_turnover||0).toFixed(2)}</td>
@@ -789,6 +799,8 @@ function openPanel(walletAddr) {
       title: '📐 Risk-Adjusted',
       metrics: [
         { label: 'Brier Score', value: (w.brier_score||0) > 0 ? (w.brier_score||0).toFixed(4) : '—', cls: (w.brier_score||0)<=0?'':(w.brier_score||0)<0.2?'green':(w.brier_score||0)<=0.3?'yellow':'red' },
+        { label: 'Avg Market ROI', value: (w.avg_market_roi||0) !== 0 ? ((w.avg_market_roi||0)*100).toFixed(2)+'%' : '—', cls: (w.avg_market_roi||0)>0.15?'green':(w.avg_market_roi||0)>0?'yellow':'red' },
+        { label: 'Downside Deviation', value: (w.downside_deviation||0) > 0 ? (w.downside_deviation||0).toFixed(4) : '—', cls: (w.downside_deviation||0)<=0?'':(w.downside_deviation||0)<0.15?'green':(w.downside_deviation||0)<=0.30?'yellow':'red' },
         { label: 'Sortino Ratio', value: (w.sortino_ratio||0).toFixed(3), cls: (w.sortino_ratio||0)>2?'green':(w.sortino_ratio||0)>=0?'yellow':'red' },
         { label: 'Calmar Ratio', value: (w.calmar_ratio||0).toFixed(3), cls: (w.calmar_ratio||0)>1?'green':(w.calmar_ratio||0)>=0?'yellow':'red' },
         { label: 'Capital Turnover', value: (w.capital_turnover||0).toFixed(3), cls: '' },
@@ -849,7 +861,7 @@ document.getElementById('export-btn').onclick = () => {
     'diversification','max_position_pct','yes_bias',
     'open_markets','open_unrealized','concentration','avg_pct_return',
     'wallet_age_days','avg_entry_price',
-    'brier_score','sortino_ratio','calmar_ratio','capital_turnover','slippage_proxy',
+    'brier_score','avg_market_roi','downside_deviation','sortino_ratio','calmar_ratio','capital_turnover','slippage_proxy',
     'onchain_age_days','onchain_tx_count','pre_polymarket_activity',
     'sybil_risk','revenge_flag','revenge_events',
   ];

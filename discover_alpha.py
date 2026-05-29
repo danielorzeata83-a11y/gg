@@ -148,7 +148,9 @@ class WalletProfile:
 
     # --- 📐 Risk-Adjusted ---
     brier_score: float = 0.0           # mean (entry_price - outcome)^2; LOWER is better (<0.2 excellent)
-    sortino_ratio: float = 0.0         # mean(per-market ROI) / downside_deviation
+    avg_market_roi: float = 0.0        # mean per-market ROI across resolved markets
+    downside_deviation: float = 0.0    # sqrt(mean(negative_roi²)) — Sortino denominator
+    sortino_ratio: float = 0.0         # avg_market_roi / downside_deviation (>2 good, >4 excellent)
     calmar_ratio: float = 0.0          # annualized ROI / max_drawdown
     capital_turnover: float = 0.0      # total_volume / total_cost_basis
 
@@ -270,7 +272,10 @@ def _compute_extended_metrics(prof, closed_positions, open_positions):
     if len(market_rois) >= 2:
         mean_roi = sum(market_rois) / len(market_rois)
         std_roi = statistics.stdev(market_rois)
-        prof.consistency_score = round(1 - (std_roi / abs(mean_roi)), 3) if mean_roi != 0 else 0.0
+        raw_consistency = (1 - (std_roi / abs(mean_roi))) if mean_roi != 0 else 0.0
+        # Clamp to [-1, 1]: values outside this range (e.g. -1.83) are valid math
+        # but uninterpretable in the UI. -1 = extremely volatile, +1 = perfectly consistent.
+        prof.consistency_score = round(max(-1.0, min(1.0, raw_consistency)), 3)
 
     # YES/NO bias
     yes_trades = sum(1 for p in closed_positions if (p.get("outcome") or "").upper() == "YES")
@@ -332,12 +337,16 @@ def _compute_extended_metrics(prof, closed_positions, open_positions):
     # Sortino: reward / downside risk (per-market basis)
     if len(market_rois) >= 2:
         mean_r = sum(market_rois) / len(market_rois)
+        prof.avg_market_roi = round(mean_r, 4)
         downside = [r for r in market_rois if r < 0]
         if len(downside) >= 1:
-            dd_dev = (sum(r**2 for r in downside) / len(downside)) ** 0.5
+            dd_dev = (sum(r ** 2 for r in downside) / len(downside)) ** 0.5
+            prof.downside_deviation = round(dd_dev, 4)
             prof.sortino_ratio = round(mean_r / dd_dev, 3) if dd_dev > 0 else 0.0
         else:
-            prof.sortino_ratio = round(mean_r * 10, 3)  # no losses = capped high score
+            # Zero losses across all resolved markets — reward but cap at a readable ceiling.
+            prof.downside_deviation = 0.0
+            prof.sortino_ratio = 5.0 if mean_r > 0 else 0.0
 
     # Calmar: annualized return / max drawdown
     if prof.max_drawdown > 0 and prof.wallet_age_days > 0:
