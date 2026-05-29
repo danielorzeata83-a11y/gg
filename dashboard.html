@@ -122,6 +122,40 @@ tbody td { padding: 9px 12px; vertical-align: middle; }
 
 /* ── Empty ── */
 .empty { text-align: center; padding: 40px 20px; color: var(--muted); font-size: 13px; }
+
+  /* ======================== MOBILE ======================== */
+  @media(max-width:600px){
+    nav{flex-wrap:wrap;padding:0 10px}
+    .tab{padding:8px 10px;font-size:12px;min-width:auto}
+    header{padding:10px 14px;flex-wrap:wrap;gap:8px}
+    .page{padding:14px 12px 30px}
+    .cards{grid-template-columns:repeat(auto-fit,minmax(140px,1fr))}
+    table{font-size:12px}
+    thead th,tbody td{padding:6px 8px}
+    #refresh-bar{flex-wrap:wrap;gap:6px}
+  }
+  /* Wallets grid */
+  .wallet-cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(240px,1fr));gap:14px;padding:4px 0}
+  .wcard{background:var(--surface);border:1px solid var(--border);border-radius:10px;padding:16px;cursor:pointer;transition:border-color .15s}
+  .wcard:hover{border-color:var(--blue)}
+  .wcard-rank{font-size:11px;color:var(--muted);margin-bottom:4px}
+  .wcard-name{font-size:14px;font-weight:600;margin-bottom:8px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .wcard-score{font-size:28px;font-weight:700;color:var(--blue);margin-bottom:10px}
+  .wcard-row{display:flex;justify-content:space-between;font-size:12px;color:var(--muted);margin-bottom:4px}
+  .wcard-row span:last-child{color:var(--text);font-weight:500}
+  .wcard-flags{margin-top:10px;display:flex;gap:5px;flex-wrap:wrap}
+  .flag-badge{font-size:10px;font-weight:600;padding:2px 7px;border-radius:10px;background:var(--red);color:#fff}
+  .flag-badge.ok{background:var(--green);color:#fff}
+  /* Notification bell */
+  #notif-bell{position:relative;cursor:pointer;font-size:18px;margin-left:8px;user-select:none}
+  #notif-count{display:none;position:absolute;top:-6px;right:-8px;background:var(--red);color:#fff;
+    border-radius:50%;font-size:10px;padding:1px 5px;font-weight:700;pointer-events:none}
+  #notif-dropdown{display:none;position:absolute;right:0;top:28px;width:320px;background:var(--surface);
+    border:1px solid var(--border);border-radius:8px;z-index:200;box-shadow:0 8px 24px rgba(0,0,0,.5)}
+  #notif-dropdown .nd-item{padding:10px 14px;border-bottom:1px solid var(--border);font-size:12px;color:var(--muted)}
+  #notif-dropdown .nd-item:last-child{border-bottom:none}
+  #notif-dropdown .nd-title{font-size:12px;font-weight:600;padding:10px 14px;color:var(--muted);
+    border-bottom:1px solid var(--border)}
 </style>
 </head>
 <body>
@@ -132,6 +166,9 @@ tbody td { padding: 9px 12px; vertical-align: middle; }
   <span class="dot" id="status-dot"></span>
   <span class="mode-badge" id="mode-badge">PAPER</span>
   <span id="refresh-info">Refreshing in <b id="countdown">5</b>s</span>
+  <span id="notif-bell" title="Alerts">🔔<span id="notif-count"></span>
+    <div id="notif-dropdown"><div class="nd-title">Recent Alerts</div><div id="notif-list"></div></div>
+  </span>
 </header>
 
 <nav>
@@ -139,6 +176,7 @@ tbody td { padding: 9px 12px; vertical-align: middle; }
   <div class="tab" data-page="live">🔴 Live Feed</div>
   <div class="tab" data-page="simulator">🧪 Copy Simulator</div>
   <div class="tab" data-page="watchlist">👥 Watchlist</div>
+  <div class="tab" data-page="wallets">Wallets</div>
 </nav>
 
 <!-- ═══════════════════ OVERVIEW ═══════════════════ -->
@@ -263,6 +301,15 @@ tbody td { padding: 9px 12px; vertical-align: middle; }
   </div>
 </div>
 
+<!-- ═══════════════════ WALLETS ═══════════════════ -->
+<div id="page-wallets" class="page" style="display:none">
+  <div style="display:flex;justify-content:space-between;align-items:center;margin-bottom:16px">
+    <h2 style="font-size:16px;font-weight:600">Alpha Wallets</h2>
+    <span id="wallets-updated" style="font-size:12px;color:var(--muted)"></span>
+  </div>
+  <div id="wallets-grid" class="wallet-cards"></div>
+</div>
+
 <!-- ═══════════════════ WATCHLIST ═══════════════════ -->
 <div class="page" id="page-watchlist">
   <div class="cards" style="grid-template-columns:repeat(auto-fit,minmax(140px,1fr));margin-bottom:16px">
@@ -297,7 +344,9 @@ document.querySelectorAll('.tab').forEach(tab => {
     document.querySelectorAll('.tab').forEach(t => t.classList.remove('active'));
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     tab.classList.add('active');
-    document.getElementById('page-' + tab.dataset.page).classList.add('active');
+    const page = tab.dataset.page;
+    document.getElementById('page-' + page).classList.add('active');
+    if (page === 'wallets') fetchWallets();
   };
 });
 

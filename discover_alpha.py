@@ -160,6 +160,10 @@ class WalletProfile:
     pre_polymarket_activity: bool = False  # had DeFi/other activity before Polymarket
     revenge_flag: bool = False         # detected 2x+ size spike after a loss
     revenge_events: int = 0            # count of such events
+    fomo_flag: bool = False
+    fomo_events: int = 0
+    martingale_flag: bool = False
+    martingale_events: int = 0
     sybil_risk: float = 0.0            # 0..1, pool-level co-trading overlap score
     slippage_proxy: float = 0.0        # avg fill-price dispersion (approximation)
 
@@ -366,13 +370,16 @@ def _compute_extended_metrics(prof, closed_positions, open_positions):
     prof.slippage_proxy = 0.0
 
 
+def _sort_by_date(positions, key="endDate"):
+    fallback = "updatedAt"
+    def _k(p): return p.get(key) or p.get(fallback) or ""
+    return sorted([p for p in positions if _k(p)], key=_k)
+
+
 def _detect_revenge_trading(closed_positions):
     """Detect size spikes (>=2x) immediately after a losing position.
     Returns (flag, event_count)."""
-    # sort chronologically by end date
-    def _key(p):
-        return p.get("endDate") or p.get("updatedAt") or ""
-    ordered = sorted([p for p in closed_positions if _key(p)], key=_key)
+    ordered = _sort_by_date(closed_positions)
     if len(ordered) < 4:
         return False, 0
     costs = []
@@ -388,6 +395,50 @@ def _detect_revenge_trading(closed_positions):
         if len(costs) > 20:
             costs.pop(0)
         prev_loss = (p.get("realizedPnl") or 0) < 0
+    return events >= 1, events
+
+
+def _detect_fomo_trading(closed_positions):
+    """Flag if wallet opens positions within 2h of a prior profitable close (chasing winners)."""
+    ordered = _sort_by_date(closed_positions, key="endDate")
+    if len(ordered) < 4:
+        return False, 0
+    events = 0
+    for i, p in enumerate(ordered):
+        if (p.get("realizedPnl") or 0) <= 0:
+            continue
+        end_dt = _parse_dt(p.get("endDate") or p.get("updatedAt") or "")
+        if not end_dt:
+            continue
+        for q in ordered[i + 1:]:
+            start_dt = _parse_dt(q.get("startDate") or q.get("createdAt") or "")
+            if not start_dt:
+                continue
+            delta_h = (start_dt - end_dt).total_seconds() / 3600
+            if 0 <= delta_h <= 2 and q.get("conditionId") != p.get("conditionId"):
+                events += 1
+                break
+    return events >= 2, events
+
+
+def _detect_martingale(closed_positions):
+    """Flag escalating bet sizes after losses within the same market (>=1.8x after a loss)."""
+    by_market = defaultdict(list)
+    for p in closed_positions:
+        cid = p.get("conditionId")
+        if cid:
+            by_market[cid].append(p)
+    events = 0
+    for cid, legs in by_market.items():
+        ordered = _sort_by_date(legs, key="startDate")
+        prev_loss = False
+        prev_cost = 0.0
+        for leg in ordered:
+            cost = (leg.get("avgPrice") or 0) * (leg.get("totalBought") or 0)
+            if prev_loss and prev_cost > 0 and cost >= 1.8 * prev_cost:
+                events += 1
+            prev_loss = (leg.get("realizedPnl") or 0) < 0
+            prev_cost = cost
     return events >= 1, events
 
 
@@ -439,6 +490,8 @@ def profile_wallet(cand):
 
     # Revenge-trading red flag (size spikes after losses)
     prof.revenge_flag, prof.revenge_events = _detect_revenge_trading(closed)
+    prof.fomo_flag, prof.fomo_events = _detect_fomo_trading(closed)
+    prof.martingale_flag, prof.martingale_events = _detect_martingale(closed)
 
     # Stash traded markets for pool-level sybil detection in main().
     # Non-dataclass attribute: asdict()/to_row() ignore it (not a declared field).
@@ -494,15 +547,17 @@ def compute_alpha_score(p: WalletProfile) -> float:
     calmar_term  = min(p.calmar_ratio, 2) if p.calmar_ratio > 0 else 0               # 0..2
 
     # Red-flag penalties
-    revenge_penalty = 1.5 if p.revenge_flag else 0
-    sybil_penalty   = p.sybil_risk * 3.0    # 0..3, heavy — coordinated wallets are dangerous to copy
+    revenge_penalty    = 1.5 if p.revenge_flag else 0
+    fomo_penalty       = 1.0 if p.fomo_flag else 0
+    martingale_penalty = 1.5 if p.martingale_flag else 0
+    sybil_penalty      = p.sybil_risk * 3.0    # 0..3, heavy — coordinated wallets are dangerous to copy
 
     return round(
         pnl_term + winrate_term + breadth_term + pf_term
         + consistency_term + accuracy_term
         + brier_term + sortino_term + calmar_term
         - conc_penalty - dd_penalty
-        - revenge_penalty - sybil_penalty,
+        - revenge_penalty - fomo_penalty - martingale_penalty - sybil_penalty,
         3
     )
 
