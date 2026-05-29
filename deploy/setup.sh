@@ -1,20 +1,35 @@
 #!/bin/bash
-# One-shot setup script for Ubuntu 22.04 on AWS EC2
-# Run as: bash deploy/setup.sh
-
+# Polybot AWS Ubuntu 22.04 setup — run once as ubuntu user with sudo
 set -e
-echo "=== Polymarket Bot — AWS Ubuntu Setup ==="
+BOT_DIR=/opt/polybot
+BOT_USER=polybot
 
-# System deps
+echo "==> Installing system packages..."
 sudo apt-get update -qq
-sudo apt-get install -y -qq python3 python3-pip python3-venv nginx certbot python3-certbot-nginx
+sudo apt-get install -y python3 python3-pip python3-venv nginx ufw htop
 
-# Create bot user
-sudo useradd -m -s /bin/bash polybot 2>/dev/null || true
+echo "==> Creating polybot system user and directory..."
+sudo useradd -r -m -s /bin/bash $BOT_USER 2>/dev/null || true
+sudo mkdir -p $BOT_DIR
+sudo chown $BOT_USER:$BOT_USER $BOT_DIR
 
-# App directory
-sudo mkdir -p /opt/polybot
-sudo chown polybot:polybot /opt/polybot
+echo "==> Configuring nginx..."
+SCRIPT_DIR="$(cd "$(dirname "$0")" && pwd)"
+sudo cp "$SCRIPT_DIR/nginx.conf" /etc/nginx/sites-available/polybot
+sudo ln -sf /etc/nginx/sites-available/polybot /etc/nginx/sites-enabled/polybot
+sudo rm -f /etc/nginx/sites-enabled/default
+sudo nginx -t
+sudo systemctl enable nginx
+sudo systemctl restart nginx
 
-echo "Copy your bot files to /opt/polybot/ then run:"
-echo "  sudo bash deploy/install_service.sh"
+echo "==> Configuring firewall..."
+sudo ufw allow OpenSSH
+sudo ufw allow 'Nginx HTTP'
+sudo ufw --force enable
+
+echo ""
+echo "Setup complete. Next steps:"
+echo "   1. Upload files:  bash deploy/upload.sh ubuntu@YOUR_EC2_IP"
+echo "   2. SSH in and create .env: cp $BOT_DIR/deploy/env.example $BOT_DIR/.env && nano $BOT_DIR/.env"
+echo "   3. Install services: sudo bash $BOT_DIR/deploy/install_service.sh"
+echo "   4. Open: http://YOUR_EC2_IP"

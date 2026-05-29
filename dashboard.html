@@ -683,12 +683,84 @@ function loadDemo() {
   document.getElementById('mode-badge').textContent = 'DEMO';
 }
 
+// ── Wallets tab ────────────────────────────────────────────────────────────
+    function fmtScore(s){return s!=null?s.toFixed(2):'—'}
+    function fmtPct(v){return v!=null?(v*100).toFixed(1)+'%':'—'}
+    function fmtPnl(v){if(v==null)return'—';return(v>=0?'+$':'−$')+Math.abs(v).toLocaleString('en',{maximumFractionDigits:0})}
+
+    function fetchWallets(){
+      fetch('/api/wallets').then(r=>r.json()).then(data=>{
+        const grid=document.getElementById('wallets-grid');
+        if(!grid)return;
+        const ws=data.wallets||[];
+        if(!ws.length){grid.innerHTML='<p style="color:var(--muted);padding:20px">No wallet data yet. Run discover_alpha.py first.</p>';return;}
+        grid.innerHTML=ws.map((w,i)=>{
+          const flags=[];
+          if(w.revenge_flag) flags.push('<span class="flag-badge">⚡ Revenge</span>');
+          if(w.fomo_flag)    flags.push('<span class="flag-badge">🔥 FOMO</span>');
+          if(w.martingale_flag) flags.push('<span class="flag-badge">📈 Martingale</span>');
+          if(!flags.length)  flags.push('<span class="flag-badge ok">✓ Clean</span>');
+          const name=w.userName||w.proxyWallet||'';
+          const display=name.length>22?name.slice(0,10)+'…'+name.slice(-6):name;
+          return `<div class="wcard">
+            <div class="wcard-rank">#${i+1}</div>
+            <div class="wcard-name" title="${w.proxyWallet||''}">${display||'Unknown'}</div>
+            <div class="wcard-score">${fmtScore(w.alpha_score)}</div>
+            <div class="wcard-row"><span>Win Rate</span><span>${fmtPct(w.win_rate)}</span></div>
+            <div class="wcard-row"><span>Realized PnL</span><span>${fmtPnl(w.realized_pnl)}</span></div>
+            <div class="wcard-row"><span>Sortino</span><span>${w.sortino_ratio!=null?w.sortino_ratio.toFixed(2):'—'}</span></div>
+            <div class="wcard-row"><span>Consistency</span><span>${w.consistency_score!=null?w.consistency_score.toFixed(2):'—'}</span></div>
+            <div class="wcard-row"><span>Markets</span><span>${w.resolved_markets||0}</span></div>
+            <div class="wcard-flags">${flags.join('')}</div>
+          </div>`;
+        }).join('');
+        const upd=document.getElementById('wallets-updated');
+        if(upd) upd.textContent='Updated '+new Date().toLocaleTimeString();
+      }).catch(()=>{});
+    }
+
+    // ── Alerts / notification bell ─────────────────────────────────────────
+    function fetchAlerts(){
+      fetch('/api/alerts').then(r=>r.json()).then(data=>{
+        const alerts=data.alerts||[];
+        const cnt=document.getElementById('notif-count');
+        const lst=document.getElementById('notif-list');
+        if(cnt){
+          if(alerts.length>0){cnt.style.display='inline';cnt.textContent=alerts.length>9?'9+':alerts.length;}
+          else{cnt.style.display='none';}
+        }
+        if(lst){
+          if(!alerts.length){lst.innerHTML='<div class="nd-item">No recent alerts</div>';return;}
+          lst.innerHTML=alerts.slice(0,8).map(a=>{
+            const ts=a.timestamp?new Date(a.timestamp*1000).toLocaleTimeString():'';
+            const w=(a.actor||a.wallet||'').slice(0,10);
+            const reason=a.reason||a.reject_reason||'Signal';
+            return `<div class="nd-item"><span style="color:var(--text)">${w}…</span> ${reason} <span style="float:right;color:var(--muted)">${ts}</span></div>`;
+          }).join('');
+        }
+      }).catch(()=>{});
+    }
+
+    // Bell toggle
+    document.addEventListener('DOMContentLoaded',function(){
+      const bell=document.getElementById('notif-bell');
+      const dd=document.getElementById('notif-dropdown');
+      if(bell&&dd){
+        bell.addEventListener('click',function(e){
+          e.stopPropagation();
+          dd.style.display=dd.style.display==='block'?'none':'block';
+        });
+        document.addEventListener('click',function(){if(dd)dd.style.display='none';});
+      }
+    });
+
 // ── Countdown & auto-refresh ───────────────────────────────────────────────
 fetchAll();
+fetchAlerts();
 setInterval(() => {
   countdown--;
   el('countdown').textContent = countdown;
-  if (countdown <= 0) { countdown = 5; fetchAll(); }
+  if (countdown <= 0) { countdown = 5; fetchAll(); fetchAlerts(); }
 }, 1000);
 
 // ── Helpers ───────────────────────────────────────────────────────────────

@@ -1,115 +1,106 @@
 #!/bin/bash
-# Installs the bot as systemd services + nginx reverse proxy
-# Run AFTER copying files to /opt/polybot/ and creating /opt/polybot/.env
-
+# Polybot service installer — run on the AWS server after uploading files
 set -e
 BOT_DIR=/opt/polybot
+BOT_USER=polybot
+VENV=$BOT_DIR/venv
 
-# Python venv
-python3 -m venv $BOT_DIR/venv
-$BOT_DIR/venv/bin/pip install -q -r $BOT_DIR/requirements.txt
+echo "==> Setting up Python venv..."
+sudo -u $BOT_USER python3 -m venv $VENV
+sudo -u $BOT_USER $VENV/bin/pip install -q --upgrade pip
+sudo -u $BOT_USER $VENV/bin/pip install -q -r $BOT_DIR/requirements.txt
 
-# ---- systemd: bot ----
+echo "==> Creating systemd services..."
+
 sudo tee /etc/systemd/system/polybot.service > /dev/null <<EOF
 [Unit]
-Description=Polymarket Copy-Trading Bot
+Description=Polybot – on-chain watcher + paper trading bot
 After=network.target
 
 [Service]
 Type=simple
-User=polybot
+User=$BOT_USER
 WorkingDirectory=$BOT_DIR
 EnvironmentFile=$BOT_DIR/.env
-ExecStart=$BOT_DIR/venv/bin/python bot.py --mode paper --bankroll \${BANKROLL_USDC}
+ExecStart=$VENV/bin/python bot.py --rpc \${POLYGON_RPC_URL} --mode \${BOT_MODE:-paper}
 Restart=on-failure
-RestartSec=10
-StandardOutput=append:$BOT_DIR/bot.log
-StandardError=append:$BOT_DIR/bot.log
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# ---- systemd: api server ----
 sudo tee /etc/systemd/system/polybot-api.service > /dev/null <<EOF
 [Unit]
-Description=Polymarket Bot Dashboard API
-After=network.target polybot.service
+Description=Polybot – Flask dashboard API
+After=network.target
 
 [Service]
 Type=simple
-User=polybot
+User=$BOT_USER
 WorkingDirectory=$BOT_DIR
-ExecStart=$BOT_DIR/venv/bin/python api_server.py --port 5000
+EnvironmentFile=$BOT_DIR/.env
+ExecStart=$VENV/bin/python api_server.py --port 8080
 Restart=on-failure
-RestartSec=5
-StandardOutput=append:$BOT_DIR/api.log
-StandardError=append:$BOT_DIR/api.log
+RestartSec=10
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# ---- systemd: crypto watcher ----
 sudo tee /etc/systemd/system/polybot-crypto.service > /dev/null <<EOF
 [Unit]
-Description=Polymarket Crypto Market Watcher (15min)
+Description=Polybot – crypto market watcher (15 min)
+After=network.target
+
+[Service]
+Type=simple
+User=$BOT_USER
+WorkingDirectory=$BOT_DIR
+EnvironmentFile=$BOT_DIR/.env
+ExecStart=$VENV/bin/python crypto_watcher.py --interval 900
+Restart=on-failure
+RestartSec=30
+StandardOutput=journal
+StandardError=journal
+
+[Install]
+WantedBy=multi-user.target
+EOF
+
+sudo tee /etc/systemd/system/polybot-discover.service > /dev/null <<'EOF'
+[Unit]
+Description=Polybot – daily alpha wallet discovery
 After=network.target
 
 [Service]
 Type=simple
 User=polybot
-WorkingDirectory=$BOT_DIR
-ExecStart=$BOT_DIR/venv/bin/python crypto_watcher.py --interval 900
-Restart=on-failure
-RestartSec=15
+WorkingDirectory=/opt/polybot
+EnvironmentFile=/opt/polybot/.env
+ExecStart=/opt/polybot/venv/bin/python discover_alpha.py --pool 100 --top 20
+Restart=always
+RestartSec=86400
+StandardOutput=journal
+StandardError=journal
 
 [Install]
 WantedBy=multi-user.target
 EOF
 
-# ---- nginx ----
-DOMAIN=${1:-YOUR_SERVER_IP}
-sudo tee /etc/nginx/sites-available/polybot > /dev/null <<EOF
-server {
-    listen 80;
-    server_name $DOMAIN;
-
-    location / {
-        proxy_pass http://127.0.0.1:5000;
-        proxy_set_header Host \$host;
-        proxy_set_header X-Real-IP \$remote_addr;
-        proxy_set_header X-Forwarded-For \$proxy_add_x_forwarded_for;
-
-        # Basic auth — protect the dashboard
-        auth_basic "Polybot Dashboard";
-        auth_basic_user_file /etc/nginx/.htpasswd;
-    }
-}
-EOF
-
-sudo ln -sf /etc/nginx/sites-available/polybot /etc/nginx/sites-enabled/polybot
-sudo rm -f /etc/nginx/sites-enabled/default
-
-# Create htpasswd if missing
-if [ ! -f /etc/nginx/.htpasswd ]; then
-    echo "Creating dashboard password..."
-    sudo apt-get install -y -qq apache2-utils
-    sudo htpasswd -c /etc/nginx/.htpasswd admin
-fi
-
-sudo nginx -t && sudo systemctl reload nginx
-
-# Enable and start services
+echo "==> Enabling and starting services..."
 sudo systemctl daemon-reload
-sudo systemctl enable polybot polybot-api polybot-crypto
-sudo systemctl start polybot polybot-api polybot-crypto
+sudo systemctl enable polybot polybot-api polybot-crypto polybot-discover
+sudo systemctl start polybot-api polybot-crypto polybot-discover
 
 echo ""
-echo "=== Done! ==="
-echo "Dashboard: http://$DOMAIN  (login: admin / password you set)"
+echo "Services installed. Dashboard at http://$(curl -s ifconfig.me 2>/dev/null || echo 'YOUR_EC2_IP')"
 echo ""
 echo "Useful commands:"
-echo "  sudo systemctl status polybot"
-echo "  sudo journalctl -u polybot -f"
-echo "  sudo systemctl restart polybot"
+echo "  sudo systemctl status polybot-api"
+echo "  sudo journalctl -u polybot-api -f"
+echo "  sudo systemctl start polybot   # start the main trading bot when ready"
