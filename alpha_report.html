@@ -3,128 +3,329 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Polymarket Alpha Wallets</title>
+<title>Polymarket Alpha Wallets — v5</title>
 <style>
   :root {
     --bg: #0d1117;
     --bg2: #161b22;
     --bg3: #21262d;
+    --bg4: #2d333b;
     --border: #30363d;
     --text: #e6edf3;
     --text2: #8b949e;
+    --text3: #6e7681;
     --green: #3fb950;
+    --green2: #238636;
     --red: #f85149;
+    --red2: #b91c1c;
     --yellow: #d29922;
     --blue: #58a6ff;
     --purple: #bc8cff;
+    --cyan: #39d0d8;
+    --orange: #f0883e;
   }
   * { box-sizing: border-box; margin: 0; padding: 0; }
-  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; }
+  html { scroll-behavior: smooth; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif; font-size: 14px; min-height: 100vh; }
 
-  /* ---- Header ---- */
-  header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 18px 28px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
-  header h1 { font-size: 18px; font-weight: 600; }
-  header h1 span { color: var(--blue); }
-  #meta { color: var(--text2); font-size: 12px; margin-left: auto; }
-
-  /* ---- Toolbar ---- */
-  #toolbar { padding: 14px 28px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--border); background: var(--bg2); }
-  input[type=search] { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 12px; width: 220px; outline: none; font-size: 13px; }
-  input[type=search]:focus { border-color: var(--blue); }
-  select { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; outline: none; cursor: pointer; }
-  .filter-group { display: flex; align-items: center; gap: 8px; }
-  .filter-group label { color: var(--text2); font-size: 12px; white-space: nowrap; }
-  input[type=range] { accent-color: var(--blue); width: 100px; cursor: pointer; }
-  #range-val { color: var(--blue); font-size: 12px; min-width: 28px; }
-  #count-badge { margin-left: auto; background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 12px; color: var(--text2); }
-  #count-badge b { color: var(--text); }
-  #load-btn { background: var(--blue); color: #000; border: none; border-radius: 6px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
-  #load-btn:hover { opacity: 0.85; }
-
-  /* ---- Stats cards ---- */
-  #stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding: 16px 28px; }
-  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
-  .card .label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
-  .card .value { font-size: 22px; font-weight: 700; }
-  .card .value.green { color: var(--green); }
-  .card .value.blue { color: var(--blue); }
-  .card .value.yellow { color: var(--yellow); }
-  .card .value.purple { color: var(--purple); }
-
-  /* ---- Table ---- */
-  #table-wrap { overflow-x: auto; padding: 0 28px 40px; }
-  table { width: 100%; border-collapse: collapse; min-width: 900px; }
-  thead th {
-    background: var(--bg2); padding: 10px 12px; text-align: left;
-    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
-    color: var(--text2); border-bottom: 1px solid var(--border);
-    cursor: pointer; user-select: none; white-space: nowrap; position: sticky; top: 0;
+  /* ======================== HEADER ======================== */
+  header {
+    background: linear-gradient(135deg, #161b22 0%, #1c2128 100%);
+    border-bottom: 1px solid var(--border);
+    padding: 16px 28px;
+    display: flex; align-items: center; gap: 16px; flex-wrap: wrap;
+    position: sticky; top: 0; z-index: 100;
+    backdrop-filter: blur(8px);
   }
-  thead th:hover { color: var(--text); }
-  thead th.sorted-asc::after { content: " ↑"; color: var(--blue); }
-  thead th.sorted-desc::after { content: " ↓"; color: var(--blue); }
-  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  .header-logo { display: flex; align-items: center; gap: 10px; }
+  header h1 { font-size: 18px; font-weight: 700; letter-spacing: -.02em; }
+  header h1 span { color: var(--blue); }
+  header h1 small { font-size: 11px; color: var(--text3); font-weight: 400; margin-left: 6px; }
+  #meta { color: var(--text2); font-size: 12px; margin-left: auto; text-align: right; line-height: 1.5; }
+
+  /* ======================== TOOLBAR ======================== */
+  #toolbar {
+    padding: 12px 28px; display: flex; gap: 10px; flex-wrap: wrap; align-items: center;
+    border-bottom: 1px solid var(--border); background: var(--bg2);
+    position: sticky; top: 57px; z-index: 99;
+  }
+  .tb-sep { width: 1px; height: 24px; background: var(--border); flex-shrink: 0; }
+  input[type=search] {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 6px 12px; width: 200px; outline: none; font-size: 13px;
+    transition: border-color .15s;
+  }
+  input[type=search]:focus { border-color: var(--blue); }
+  select {
+    background: var(--bg3); border: 1px solid var(--border); color: var(--text);
+    border-radius: 6px; padding: 5px 8px; font-size: 12px; outline: none; cursor: pointer;
+  }
+  .filter-group { display: flex; align-items: center; gap: 6px; }
+  .filter-group label { color: var(--text2); font-size: 11px; white-space: nowrap; }
+  input[type=range] { accent-color: var(--blue); width: 90px; cursor: pointer; }
+  .range-val { color: var(--blue); font-size: 12px; min-width: 24px; font-weight: 600; }
+  #count-badge {
+    margin-left: auto; background: var(--bg3); border: 1px solid var(--border);
+    border-radius: 20px; padding: 4px 12px; font-size: 12px; color: var(--text2);
+  }
+  #count-badge b { color: var(--text); }
+  .btn {
+    background: var(--blue); color: #000; border: none; border-radius: 6px;
+    padding: 6px 14px; font-size: 12px; font-weight: 700; cursor: pointer;
+    transition: opacity .15s, transform .1s;
+  }
+  .btn:hover { opacity: 0.85; transform: translateY(-1px); }
+  .btn:active { transform: translateY(0); }
+  .btn-ghost {
+    background: var(--bg3); color: var(--text2); border: 1px solid var(--border);
+  }
+  .btn-ghost:hover { color: var(--text); background: var(--bg4); }
+
+  /* ======================== STATS CARDS ======================== */
+  #stats {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(150px, 1fr));
+    gap: 10px; padding: 16px 28px;
+    background: var(--bg);
+  }
+  .card {
+    background: var(--bg2); border: 1px solid var(--border); border-radius: 10px;
+    padding: 14px 16px; transition: border-color .2s, transform .2s;
+  }
+  .card:hover { border-color: var(--blue); transform: translateY(-2px); }
+  .card .label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .06em; margin-bottom: 6px; }
+  .card .value { font-size: 20px; font-weight: 700; line-height: 1.2; }
+  .card .sub { font-size: 11px; color: var(--text3); margin-top: 3px; }
+  .green { color: var(--green); }
+  .blue { color: var(--blue); }
+  .yellow { color: var(--yellow); }
+  .purple { color: var(--purple); }
+  .cyan { color: var(--cyan); }
+  .orange { color: var(--orange); }
+
+  /* ======================== SECTION PILLS ======================== */
+  #section-pills { padding: 10px 28px; display: flex; gap: 6px; flex-wrap: wrap; background: var(--bg); }
+  .pill {
+    padding: 4px 12px; border-radius: 20px; font-size: 12px; cursor: pointer;
+    border: 1px solid var(--border); color: var(--text2);
+    transition: all .15s; user-select: none;
+  }
+  .pill.active { background: var(--blue); color: #000; border-color: var(--blue); font-weight: 700; }
+  .pill:hover:not(.active) { border-color: var(--text2); color: var(--text); }
+
+  /* ======================== TABLE ======================== */
+  #table-wrap { overflow-x: auto; padding: 0 28px 100px; }
+  table { width: 100%; border-collapse: collapse; }
+
+  /* Column group headers */
+  .col-group-header th {
+    background: var(--bg2); border-bottom: 1px solid var(--border);
+    padding: 6px 12px; text-align: center; font-size: 10px;
+    text-transform: uppercase; letter-spacing: .08em; color: var(--text3);
+    border-right: 1px solid var(--border);
+  }
+  .col-group-header th:last-child { border-right: none; }
+  .cg-identity { color: var(--text2) !important; }
+  .cg-score { color: var(--blue) !important; }
+  .cg-perf { color: var(--green) !important; }
+  .cg-edge { color: var(--purple) !important; }
+  .cg-activity { color: var(--cyan) !important; }
+  .cg-risk { color: var(--orange) !important; }
+
+  thead tr.col-headers th {
+    background: var(--bg2); padding: 8px 10px; text-align: left;
+    font-size: 10px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text2); border-bottom: 2px solid var(--border);
+    cursor: pointer; user-select: none; white-space: nowrap;
+    position: sticky; top: 0;
+    transition: color .15s;
+  }
+  thead tr.col-headers th:hover { color: var(--text); }
+  thead tr.col-headers th.sorted-asc::after { content: " ↑"; color: var(--blue); }
+  thead tr.col-headers th.sorted-desc::after { content: " ↓"; color: var(--blue); }
+  thead tr.col-headers th.sorted-asc, thead tr.col-headers th.sorted-desc { color: var(--text); }
+
+  /* Column group separators */
+  .sep-col { border-left: 1px solid var(--border) !important; }
+
+  tbody tr {
+    border-bottom: 1px solid rgba(48,54,61,0.5);
+    transition: background .1s;
+    cursor: pointer;
+  }
   tbody tr:hover { background: var(--bg2); }
-  tbody td { padding: 10px 12px; vertical-align: middle; }
+  tbody tr.selected { background: rgba(88,166,255,0.08) !important; border-left: 2px solid var(--blue); }
+  tbody tr.excluded-row { opacity: 0.4; }
+  tbody td { padding: 9px 10px; vertical-align: middle; font-size: 13px; }
+
+  /* Identity cells */
   .wallet-cell { display: flex; align-items: center; gap: 8px; }
-  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--blue); flex-shrink: 0; }
-  .wallet-addr { font-family: monospace; font-size: 12px; color: var(--text2); }
-  .wallet-name { font-size: 13px; font-weight: 500; }
-  .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
-  .score-bar { height: 6px; border-radius: 3px; background: var(--blue); min-width: 2px; }
-  .score-num { font-size: 13px; font-weight: 600; color: var(--blue); min-width: 36px; }
-  .winrate { font-weight: 600; }
-  .pnl-pos { color: var(--green); font-weight: 600; }
-  .pnl-neg { color: var(--red); font-weight: 600; }
-  .conc-bar { height: 6px; border-radius: 3px; background: var(--yellow); min-width: 2px; }
-  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .avatar {
+    width: 30px; height: 30px; border-radius: 50%; display: flex;
+    align-items: center; justify-content: center; font-size: 11px; font-weight: 700;
+    color: #fff; flex-shrink: 0; background: linear-gradient(135deg, var(--blue), var(--purple));
+  }
+  .wallet-name { font-size: 13px; font-weight: 500; line-height: 1.2; }
+  .wallet-addr { font-family: monospace; font-size: 11px; color: var(--text3); }
+
+  /* Score bar */
+  .score-bar-wrap { display: flex; align-items: center; gap: 8px; min-width: 100px; }
+  .score-bar-bg { flex: 1; height: 6px; border-radius: 3px; background: var(--bg3); }
+  .score-bar { height: 6px; border-radius: 3px; background: linear-gradient(90deg, var(--blue), var(--purple)); }
+  .score-num { font-size: 13px; font-weight: 700; color: var(--blue); min-width: 36px; }
+
+  /* Cell coloring helpers */
+  .cell-green { color: var(--green) !important; font-weight: 600; }
+  .cell-yellow { color: var(--yellow) !important; font-weight: 600; }
+  .cell-red { color: var(--red) !important; font-weight: 600; }
+  .cell-neutral { color: var(--text2); }
+  .cell-pos { color: var(--green); font-weight: 600; }
+  .cell-neg { color: var(--red); font-weight: 600; }
+
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; }
   .badge-green { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
   .badge-red { background: rgba(248,81,73,.12); color: var(--red); border: 1px solid rgba(248,81,73,.25); }
   .badge-yellow { background: rgba(210,153,34,.12); color: var(--yellow); border: 1px solid rgba(210,153,34,.25); }
-  .excluded-row { opacity: 0.45; }
+
   .empty { text-align: center; padding: 60px; color: var(--text2); }
 
-  /* ---- Upload zone ---- */
-  #upload-zone { display: none; border: 2px dashed var(--border); border-radius: 12px; margin: 40px 28px; padding: 60px; text-align: center; cursor: pointer; transition: border-color .2s; }
+  /* ======================== UPLOAD ZONE ======================== */
+  #upload-zone {
+    display: none; border: 2px dashed var(--border); border-radius: 16px;
+    margin: 40px 28px; padding: 80px 40px; text-align: center; cursor: pointer;
+    transition: border-color .2s, background .2s;
+  }
   #upload-zone.visible { display: block; }
-  #upload-zone:hover, #upload-zone.drag { border-color: var(--blue); }
-  #upload-zone p { color: var(--text2); margin-top: 8px; font-size: 13px; }
-  #upload-zone .icon { font-size: 40px; }
+  #upload-zone:hover, #upload-zone.drag { border-color: var(--blue); background: rgba(88,166,255,.04); }
+  #upload-zone .icon { font-size: 48px; margin-bottom: 12px; }
+  #upload-zone h2 { font-size: 18px; color: var(--text); margin-bottom: 8px; }
+  #upload-zone p { color: var(--text2); font-size: 13px; line-height: 1.6; }
+  code { background: var(--bg3); padding: 1px 6px; border-radius: 4px; font-size: 12px; }
 
-  /* ---- Tooltip ---- */
+  /* ======================== DETAIL PANEL ======================== */
+  #detail-panel {
+    position: fixed; right: 0; top: 0; bottom: 0; width: 420px;
+    background: var(--bg2); border-left: 1px solid var(--border);
+    z-index: 200; display: flex; flex-direction: column;
+    transform: translateX(100%); transition: transform .25s cubic-bezier(0.4, 0, 0.2, 1);
+    overflow: hidden;
+  }
+  #detail-panel.open { transform: translateX(0); }
+  #panel-header {
+    padding: 20px; border-bottom: 1px solid var(--border);
+    display: flex; align-items: flex-start; gap: 12px;
+  }
+  #panel-avatar {
+    width: 48px; height: 48px; border-radius: 50%;
+    background: linear-gradient(135deg, var(--blue), var(--purple));
+    display: flex; align-items: center; justify-content: center;
+    font-size: 18px; font-weight: 700; color: #fff; flex-shrink: 0;
+  }
+  #panel-name { font-size: 16px; font-weight: 700; margin-bottom: 2px; }
+  #panel-addr { font-family: monospace; font-size: 12px; color: var(--text3); word-break: break-all; }
+  #panel-close {
+    margin-left: auto; background: var(--bg3); border: 1px solid var(--border);
+    color: var(--text2); border-radius: 6px; padding: 4px 10px; cursor: pointer; font-size: 16px;
+    flex-shrink: 0; transition: color .15s;
+  }
+  #panel-close:hover { color: var(--text); }
+  #panel-body { overflow-y: auto; padding: 16px 20px; flex: 1; }
+  .panel-section { margin-bottom: 20px; }
+  .panel-section-title {
+    font-size: 11px; text-transform: uppercase; letter-spacing: .06em;
+    color: var(--text3); margin-bottom: 10px; padding-bottom: 6px;
+    border-bottom: 1px solid var(--border);
+  }
+  .panel-metrics { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; }
+  .panel-metric {
+    background: var(--bg3); border-radius: 8px; padding: 10px 12px;
+    border: 1px solid var(--border);
+  }
+  .panel-metric .pm-label { font-size: 10px; color: var(--text3); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 4px; }
+  .panel-metric .pm-value { font-size: 16px; font-weight: 700; }
+  #panel-overlay {
+    display: none; position: fixed; inset: 0; background: rgba(0,0,0,.4);
+    z-index: 199; backdrop-filter: blur(2px);
+  }
+  #panel-overlay.visible { display: block; }
+
+  /* ======================== TOOLTIP ======================== */
   [data-tip] { position: relative; }
-  [data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: 125%; left: 50%; transform: translateX(-50%); background: #000; color: #fff; font-size: 11px; padding: 4px 8px; border-radius: 4px; white-space: nowrap; z-index: 99; pointer-events: none; }
+  [data-tip]:hover::after {
+    content: attr(data-tip);
+    position: absolute; bottom: calc(100% + 6px); left: 50%;
+    transform: translateX(-50%);
+    background: #1c2128; color: var(--text); border: 1px solid var(--border);
+    font-size: 11px; padding: 6px 10px; border-radius: 6px;
+    white-space: pre-wrap; max-width: 240px; z-index: 999; pointer-events: none;
+    box-shadow: 0 4px 16px rgba(0,0,0,.4);
+    line-height: 1.5; text-transform: none; letter-spacing: 0; font-weight: 400;
+  }
+
+  /* ======================== SCROLLBAR ======================== */
+  ::-webkit-scrollbar { width: 6px; height: 6px; }
+  ::-webkit-scrollbar-track { background: var(--bg); }
+  ::-webkit-scrollbar-thumb { background: var(--bg4); border-radius: 3px; }
+  ::-webkit-scrollbar-thumb:hover { background: var(--text3); }
+
+  /* ======================== ANIMATIONS ======================== */
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: none; } }
+  tbody tr { animation: fadeIn .15s ease both; }
+
+  /* ======================== RESPONSIVE ======================== */
+  @media (max-width: 768px) {
+    #detail-panel { width: 100%; }
+    #stats { grid-template-columns: repeat(2, 1fr); }
+  }
 </style>
 </head>
 <body>
 
+<!-- HEADER -->
 <header>
-  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
-  <h1>Polymarket <span>Alpha Wallets</span></h1>
+  <div class="header-logo">
+    <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2">
+      <polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/>
+    </svg>
+    <h1>Polymarket <span>Alpha Wallets</span> <small>v5</small></h1>
+  </div>
   <div id="meta">No data loaded</div>
 </header>
 
+<!-- TOOLBAR -->
 <div id="toolbar">
-  <input type="search" id="search" placeholder="Search name or wallet...">
+  <input type="search" id="search" placeholder="🔍 Search name or wallet...">
+  <div class="tb-sep"></div>
 
   <div class="filter-group">
-    <label>Min score</label>
+    <label>Min Score</label>
     <input type="range" id="min-score" min="0" max="10" step="0.5" value="0">
-    <span id="range-val">0</span>
+    <span class="range-val" id="range-val">0</span>
   </div>
 
   <div class="filter-group">
-    <label>Min win rate</label>
+    <label>Win Rate</label>
     <select id="min-wr">
       <option value="0">Any</option>
       <option value="0.5">≥ 50%</option>
       <option value="0.6">≥ 60%</option>
+      <option value="0.65">≥ 65%</option>
       <option value="0.7">≥ 70%</option>
     </select>
   </div>
 
   <div class="filter-group">
-    <label>Min markets</label>
+    <label>Profit Factor</label>
+    <select id="min-pf">
+      <option value="0">Any</option>
+      <option value="1">≥ 1.0</option>
+      <option value="1.5">≥ 1.5</option>
+      <option value="2">≥ 2.0</option>
+    </select>
+  </div>
+
+  <div class="filter-group">
+    <label>Min Markets</label>
     <select id="min-mkts">
       <option value="0">Any</option>
       <option value="10">≥ 10</option>
@@ -134,57 +335,127 @@
   </div>
 
   <div class="filter-group">
-    <label>Show excluded</label>
+    <label>Show Excluded</label>
     <input type="checkbox" id="show-excluded">
   </div>
 
-  <span id="count-badge">Showing <b id="row-count">0</b> wallets</span>
-  <button id="load-btn">📂 Load JSON</button>
+  <div class="tb-sep"></div>
+  <button class="btn btn-ghost" id="export-btn">⬇ CSV</button>
+  <button class="btn" id="load-btn">📂 Load JSON</button>
   <input type="file" id="file-input" accept=".json" style="display:none">
+  <span id="count-badge">Showing <b id="row-count">0</b> wallets</span>
 </div>
 
+<!-- STATS CARDS -->
 <div id="stats">
-  <div class="card"><div class="label">Total wallets</div><div class="value blue" id="s-total">—</div></div>
-  <div class="card"><div class="label">Qualified</div><div class="value green" id="s-qualified">—</div></div>
-  <div class="card"><div class="label">Avg win rate</div><div class="value yellow" id="s-winrate">—</div></div>
-  <div class="card"><div class="label">Avg alpha score</div><div class="value purple" id="s-score">—</div></div>
-  <div class="card"><div class="label">Total realized PnL</div><div class="value green" id="s-pnl">—</div></div>
-  <div class="card"><div class="label">Generated at</div><div class="value" id="s-time" style="font-size:14px;color:var(--text2)">—</div></div>
+  <div class="card"><div class="label">Total Wallets</div><div class="value blue" id="s-total">—</div><div class="sub">in dataset</div></div>
+  <div class="card"><div class="label">Qualified</div><div class="value green" id="s-qualified">—</div><div class="sub">score &gt; 0</div></div>
+  <div class="card"><div class="label">Avg Win Rate</div><div class="value yellow" id="s-winrate">—</div><div class="sub">qualified only</div></div>
+  <div class="card"><div class="label">Avg Alpha Score</div><div class="value purple" id="s-score">—</div><div class="sub">qualified only</div></div>
+  <div class="card"><div class="label">Total Realized PnL</div><div class="value green" id="s-pnl">—</div><div class="sub">USDC</div></div>
+  <div class="card"><div class="label">Avg Profit Factor</div><div class="value cyan" id="s-pf">—</div><div class="sub">&gt;1.5 = good</div></div>
+  <div class="card"><div class="label">Avg Max Drawdown</div><div class="value orange" id="s-dd">—</div><div class="sub">lower is better</div></div>
+  <div class="card"><div class="label">Generated At</div><div class="value" id="s-time" style="font-size:13px;color:var(--text2)">—</div><div class="sub" id="s-params">—</div></div>
 </div>
 
-<div id="upload-zone" class="visible" id="upload-zone">
+<!-- SECTION PILLS -->
+<div id="section-pills">
+  <span class="pill active" data-section="all">All Columns</span>
+  <span class="pill" data-section="perf">💰 Performance</span>
+  <span class="pill" data-section="edge">🎯 Edge</span>
+  <span class="pill" data-section="activity">🔄 Activity</span>
+  <span class="pill" data-section="risk">🛡️ Risk</span>
+</div>
+
+<!-- UPLOAD ZONE -->
+<div id="upload-zone" class="visible">
   <div class="icon">📊</div>
-  <h2 style="margin-top:12px">Drop <code>alpha_wallets_report.json</code> here</h2>
-  <p>Or click "Load JSON" above · Generated by <code>discover_alpha.py</code></p>
+  <h2>Drop <code>alpha_wallets_report.json</code> here</h2>
+  <p>Or click <strong>Load JSON</strong> above<br>Generated by <code>python discover_alpha.py --out alpha_wallets.json</code></p>
 </div>
 
+<!-- TABLE -->
 <div id="table-wrap" style="display:none">
 <table>
   <thead>
-    <tr>
-      <th data-col="rank" class="sorted-asc">#</th>
-      <th data-col="userName">Name</th>
-      <th data-col="alpha_score" data-tip="Composite skill score">Score</th>
-      <th data-col="win_rate" data-tip="Wins / (wins + losses)">Win Rate</th>
-      <th data-col="resolved_markets" data-tip="Distinct resolved markets">Markets</th>
-      <th data-col="realized_pnl" data-tip="Booked profit from resolved positions">Realized PnL</th>
-      <th data-col="concentration" data-tip="Fraction of profit from single best market (lower = better)">Concentration</th>
-      <th data-col="avg_pct_return" data-tip="Average % return per resolved market">Avg Return</th>
-      <th data-col="open_markets">Open Pos</th>
-      <th data-col="open_unrealized" data-tip="Unrealized PnL on open positions">Unrealized</th>
+    <tr class="col-group-header" id="group-row">
+      <th colspan="2" class="cg-identity">🪪 Identity</th>
+      <th colspan="1" class="cg-score">⭐ Score</th>
+      <th colspan="5" class="cg-perf sep-col">💰 Performance</th>
+      <th colspan="2" class="cg-edge sep-col">🎯 Edge</th>
+      <th colspan="4" class="cg-activity sep-col">🔄 Activity</th>
+      <th colspan="3" class="cg-risk sep-col">🛡️ Risk</th>
+    </tr>
+    <tr class="col-headers">
+      <!-- Identity -->
+      <th data-col="rank" class="sorted-desc" data-tip="Rank by alpha score">#</th>
+      <th data-col="userName" data-tip="Wallet name or address">Name</th>
+      <!-- Score -->
+      <th data-col="alpha_score" data-tip="Composite skill score combining PnL, win rate, breadth, profit factor, consistency, accuracy vs odds, minus concentration and drawdown penalties.">Score</th>
+      <!-- Performance -->
+      <th data-col="win_rate" class="sep-col" data-tip="Wins / (wins + losses) across resolved markets.&#10;Green ≥ 65% · Yellow 50–65% · Red < 50%">Win Rate</th>
+      <th data-col="realized_pnl" data-tip="Total booked profit from resolved positions (USDC).&#10;Ignores open/unrealized gains.">Realized PnL</th>
+      <th data-col="roi_realized" data-tip="realized_pnl / total_cost_basis × 100.&#10;Green > 20% · Yellow 0–20% · Red < 0%">ROI %</th>
+      <th data-col="profit_factor" data-tip="Gross wins / gross losses.&#10;Green ≥ 1.5 · Yellow 1–1.5 · Red < 1&#10;> 1.5 = consistent edge">PF</th>
+      <th data-col="max_drawdown" data-tip="Maximum peak-to-trough decline in equity curve.&#10;Green < 10% · Yellow 10–30% · Red > 30%">Max DD</th>
+      <!-- Edge -->
+      <th data-col="accuracy_vs_odds" class="sep-col" data-tip="win_rate – avg_entry_price.&#10;Positive = you win more often than the market implied.&#10;Green > 0.10 · Yellow 0–0.10 · Red < 0">Acc vs Odds</th>
+      <th data-col="consistency_score" data-tip="1 – (stddev_roi / mean_roi) across markets.&#10;Penalizes volatile ROI. Green > 0.5 · Yellow 0–0.5 · Red < 0">Consistency</th>
+      <!-- Activity -->
+      <th data-col="resolved_markets" class="sep-col" data-tip="Distinct resolved markets traded. More = less one-hit-wonder risk.">Markets</th>
+      <th data-col="total_volume_usdc" data-tip="Total USDC bought + sold. Differentiates whales from retail.">Volume</th>
+      <th data-col="avg_hold_days" data-tip="Average days between first buy and resolution.&#10;Low = momentum trader · High = position holder">Hold Days</th>
+      <th data-col="trades_per_day" data-tip="Positions / active days. Higher = scalper; lower = occasional">Trades/Day</th>
+      <!-- Risk -->
+      <th data-col="diversification" class="sep-col" data-tip="unique_markets / total_positions.&#10;1.0 = each position is a unique market (max diversified)">Diversif.</th>
+      <th data-col="max_position_pct" data-tip="Max single market cost / total capital.&#10;> 30% = concentrated risk">Max Pos%</th>
+      <th data-col="yes_bias" data-tip="(YES trades – NO trades) / total.&#10;+1 = always YES · -1 = always NO · 0 = balanced">YES Bias</th>
     </tr>
   </thead>
   <tbody id="tbody"></tbody>
 </table>
 </div>
 
+<!-- DETAIL PANEL OVERLAY -->
+<div id="panel-overlay"></div>
+
+<!-- DETAIL PANEL -->
+<div id="detail-panel">
+  <div id="panel-header">
+    <div id="panel-avatar">?</div>
+    <div style="flex:1;min-width:0">
+      <div id="panel-name">—</div>
+      <div id="panel-addr">—</div>
+    </div>
+    <button id="panel-close">✕</button>
+  </div>
+  <div id="panel-body">
+    <!-- Populated dynamically -->
+  </div>
+</div>
+
 <script>
+// ============================================================
+// DATA & STATE
+// ============================================================
 let allWallets = [];
 let sortCol = 'alpha_score';
 let sortAsc = false;
 let maxScore = 10;
+let selectedWallet = null;
 
-// ---- Load file ----
+// Column visibility by section
+const SECTION_COLS = {
+  all:      null, // show all
+  perf:     ['rank','userName','alpha_score','win_rate','realized_pnl','roi_realized','profit_factor','max_drawdown'],
+  edge:     ['rank','userName','alpha_score','accuracy_vs_odds','consistency_score','avg_entry_price','avg_pct_return'],
+  activity: ['rank','userName','alpha_score','resolved_markets','total_volume_usdc','avg_hold_days','trades_per_day','wallet_age_days'],
+  risk:     ['rank','userName','alpha_score','diversification','max_position_pct','yes_bias','concentration','exit_discipline'],
+};
+
+// ============================================================
+// FILE LOADING
+// ============================================================
 document.getElementById('load-btn').onclick = () => document.getElementById('file-input').click();
 document.getElementById('file-input').onchange = e => loadFile(e.target.files[0]);
 
@@ -199,21 +470,7 @@ function loadFile(file) {
   const r = new FileReader();
   r.onload = e => {
     try {
-      const data = JSON.parse(e.target.result);
-      // Accept both formats: raw array OR {wallets:[...], generated_at:...}
-      if (Array.isArray(data)) {
-        allWallets = data.map((w, i) => ({ ...w, rank: i + 1 }));
-        updateMeta({ generated_at: null, params: {} });
-      } else {
-        allWallets = (data.wallets || []).map((w, i) => ({ ...w, rank: i + 1 }));
-        updateMeta(data);
-      }
-      maxScore = Math.max(...allWallets.map(w => w.alpha_score || 0), 10);
-      document.getElementById('min-score').max = maxScore.toFixed(1);
-      updateStats();
-      render();
-      zone.classList.remove('visible');
-      document.getElementById('table-wrap').style.display = '';
+      loadFromObj(JSON.parse(e.target.result));
     } catch (err) {
       alert('Invalid JSON: ' + err.message);
     }
@@ -221,22 +478,23 @@ function loadFile(file) {
   r.readAsText(file);
 }
 
-// Try auto-load from same directory
+// Auto-load from same directory
 fetch('alpha_wallets_report.json')
   .then(r => r.ok ? r.json() : null)
-  .then(data => { if (data) { const e = { target: { result: JSON.stringify(data) } }; /* reuse */ loadFromObj(data); } })
+  .then(data => { if (data) loadFromObj(data); })
   .catch(() => {});
 
 function loadFromObj(data) {
+  let wallets, meta;
   if (Array.isArray(data)) {
-    allWallets = data.map((w, i) => ({ ...w, rank: i + 1 }));
-    updateMeta({});
+    wallets = data; meta = {};
   } else {
-    allWallets = (data.wallets || []).map((w, i) => ({ ...w, rank: i + 1 }));
-    updateMeta(data);
+    wallets = data.wallets || []; meta = data;
   }
+  allWallets = wallets.map((w, i) => ({ ...w, rank: i + 1 }));
   maxScore = Math.max(...allWallets.map(w => w.alpha_score || 0), 10);
   document.getElementById('min-score').max = maxScore.toFixed(1);
+  updateMeta(meta);
   updateStats();
   render();
   zone.classList.remove('visible');
@@ -246,57 +504,61 @@ function loadFromObj(data) {
 function updateMeta(data) {
   const ts = data.generated_at ? new Date(data.generated_at).toLocaleString() : '—';
   const p = data.params || {};
-  document.getElementById('meta').textContent =
-    `Generated: ${ts}  ·  ${p.category || ''}  ${p.period || ''}  ·  Pool: ${p.pool_size || allWallets.length}`;
+  document.getElementById('meta').innerHTML =
+    `Generated: <strong>${ts}</strong><br>${p.category||''} · ${p.period||''} · Pool: ${p.pool_size || allWallets.length}`;
+  document.getElementById('s-time').textContent = ts;
+  document.getElementById('s-params').textContent =
+    p.category ? `${p.category} / ${p.period}` : '—';
 }
 
 function updateStats() {
   const qualified = allWallets.filter(w => w.alpha_score > 0);
-  const avgWr = qualified.length ? qualified.reduce((a, w) => a + w.win_rate, 0) / qualified.length : 0;
-  const avgScore = qualified.length ? qualified.reduce((a, w) => a + w.alpha_score, 0) / qualified.length : 0;
-  const totalPnl = qualified.reduce((a, w) => a + (w.realized_pnl || 0), 0);
+  const avg = (arr, key) => arr.length ? arr.reduce((a,w) => a + (w[key]||0), 0) / arr.length : 0;
 
   document.getElementById('s-total').textContent = allWallets.length;
   document.getElementById('s-qualified').textContent = qualified.length;
-  document.getElementById('s-winrate').textContent = (avgWr * 100).toFixed(1) + '%';
-  document.getElementById('s-score').textContent = avgScore.toFixed(2);
-  document.getElementById('s-pnl').textContent = '$' + fmt(totalPnl);
-
-  const ts = allWallets[0]?.generated_at || document.getElementById('meta').textContent.split('Generated: ')[1]?.split('  ')[0] || '—';
-  document.getElementById('s-time').textContent = ts === '—' ? '—' : ts;
+  document.getElementById('s-winrate').textContent = pct(avg(qualified,'win_rate'));
+  document.getElementById('s-score').textContent = avg(qualified,'alpha_score').toFixed(2);
+  document.getElementById('s-pnl').textContent = '$' + fmt(qualified.reduce((a,w)=>a+(w.realized_pnl||0),0));
+  document.getElementById('s-pf').textContent = avg(qualified,'profit_factor').toFixed(2);
+  document.getElementById('s-dd').textContent = pct(avg(qualified,'max_drawdown'));
 }
 
-// ---- Filters ----
-['search','min-score','min-wr','min-mkts','show-excluded'].forEach(id => {
+// ============================================================
+// FILTERS
+// ============================================================
+['search','min-score','min-wr','min-pf','min-mkts','show-excluded'].forEach(id => {
   document.getElementById(id).addEventListener('input', render);
 });
 document.getElementById('min-score').addEventListener('input', function() {
   document.getElementById('range-val').textContent = this.value;
-  render();
 });
 
 function getFiltered() {
   const q = document.getElementById('search').value.toLowerCase().trim();
   const minScore = parseFloat(document.getElementById('min-score').value);
   const minWr = parseFloat(document.getElementById('min-wr').value);
+  const minPf = parseFloat(document.getElementById('min-pf').value);
   const minMkts = parseInt(document.getElementById('min-mkts').value);
   const showExcluded = document.getElementById('show-excluded').checked;
 
   return allWallets.filter(w => {
     if (!showExcluded && w.alpha_score <= 0) return false;
     if (w.alpha_score < minScore) return false;
-    if (w.win_rate < minWr) return false;
-    if (w.resolved_markets < minMkts) return false;
+    if ((w.win_rate || 0) < minWr) return false;
+    if ((w.profit_factor || 0) < minPf) return false;
+    if ((w.resolved_markets || 0) < minMkts) return false;
     if (q) {
-      const name = (w.userName || '').toLowerCase();
-      const addr = (w.proxyWallet || '').toLowerCase();
-      if (!name.includes(q) && !addr.includes(q)) return false;
+      if (!(w.userName||'').toLowerCase().includes(q) &&
+          !(w.proxyWallet||'').toLowerCase().includes(q)) return false;
     }
     return true;
   });
 }
 
-// ---- Sort ----
+// ============================================================
+// SORT
+// ============================================================
 document.querySelectorAll('thead th[data-col]').forEach(th => {
   th.onclick = () => {
     const col = th.dataset.col;
@@ -311,21 +573,33 @@ document.querySelectorAll('thead th[data-col]').forEach(th => {
 function sorted(arr) {
   return [...arr].sort((a, b) => {
     let va = a[sortCol] ?? 0, vb = b[sortCol] ?? 0;
-    if (typeof va === 'string') va = va.toLowerCase(), vb = (vb||'').toLowerCase();
-    if (va < vb) return sortAsc ? -1 : 1;
-    if (va > vb) return sortAsc ? 1 : -1;
-    return 0;
+    if (typeof va === 'string') { va = va.toLowerCase(); vb = (vb||'').toLowerCase(); }
+    return sortAsc ? (va < vb ? -1 : va > vb ? 1 : 0) : (va > vb ? -1 : va < vb ? 1 : 0);
   });
 }
 
-// ---- Render ----
+// ============================================================
+// SECTION PILLS
+// ============================================================
+document.querySelectorAll('.pill[data-section]').forEach(pill => {
+  pill.onclick = () => {
+    document.querySelectorAll('.pill[data-section]').forEach(p => p.classList.remove('active'));
+    pill.classList.add('active');
+    // No column hiding for now — all columns always shown; pills just highlight
+    render();
+  };
+});
+
+// ============================================================
+// RENDER TABLE
+// ============================================================
 function render() {
   const rows = sorted(getFiltered());
   document.getElementById('row-count').textContent = rows.length;
   const tbody = document.getElementById('tbody');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="10" class="empty">No wallets match the current filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="17" class="empty">No wallets match the current filters.</td></tr>';
     return;
   }
 
@@ -333,60 +607,237 @@ function render() {
 
   tbody.innerHTML = rows.map((w, i) => {
     const excluded = w.alpha_score <= 0;
-    const wr = (w.win_rate * 100).toFixed(1);
-    const wrClass = w.win_rate >= 0.65 ? 'badge-green' : w.win_rate >= 0.5 ? 'badge-yellow' : 'badge-red';
-    const pnlClass = w.realized_pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const pnlSign = w.realized_pnl >= 0 ? '+' : '';
-    const scoreW = Math.round((w.alpha_score / scoreMax) * 100);
-    const concW = Math.round(w.concentration * 100);
     const initials = (w.userName || w.proxyWallet || '?').slice(0, 2).toUpperCase();
-    const shortAddr = w.proxyWallet ? w.proxyWallet.slice(0, 6) + '...' + w.proxyWallet.slice(-4) : '—';
-    const avgRet = w.avg_pct_return != null ? (w.avg_pct_return * 100).toFixed(1) + '%' : '—';
-    const unrealClass = (w.open_unrealized || 0) >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const unrealSign = (w.open_unrealized || 0) >= 0 ? '+' : '';
+    const shortAddr = w.proxyWallet ? w.proxyWallet.slice(0,6) + '…' + w.proxyWallet.slice(-4) : '—';
+    const scoreW = Math.round((w.alpha_score / scoreMax) * 80);
 
-    return `<tr class="${excluded ? 'excluded-row' : ''}">
-      <td style="color:var(--text2);font-size:12px">${i + 1}</td>
+    // Win rate coloring
+    const wrClass = (w.win_rate||0) >= 0.65 ? 'badge-green' : (w.win_rate||0) >= 0.5 ? 'badge-yellow' : 'badge-red';
+
+    // ROI coloring
+    const roiClass = (w.roi_realized||0) > 20 ? 'cell-green' : (w.roi_realized||0) > 0 ? 'cell-yellow' : 'cell-red';
+
+    // Profit Factor coloring
+    const pfClass = (w.profit_factor||0) >= 1.5 ? 'cell-green' : (w.profit_factor||0) >= 1.0 ? 'cell-yellow' : 'cell-red';
+
+    // Max drawdown coloring
+    const ddClass = (w.max_drawdown||0) < 0.10 ? 'cell-green' : (w.max_drawdown||0) < 0.30 ? 'cell-yellow' : 'cell-red';
+
+    // Accuracy vs odds
+    const aoClass = (w.accuracy_vs_odds||0) > 0.10 ? 'cell-green' : (w.accuracy_vs_odds||0) > 0 ? 'cell-yellow' : 'cell-red';
+
+    // Consistency
+    const csClass = (w.consistency_score||0) > 0.5 ? 'cell-green' : (w.consistency_score||0) > 0 ? 'cell-yellow' : 'cell-red';
+
+    // YES Bias display
+    const yb = w.yes_bias || 0;
+    const ybStr = yb > 0 ? '+' + yb.toFixed(2) : yb.toFixed(2);
+    const ybClass = Math.abs(yb) < 0.2 ? 'cell-neutral' : yb > 0 ? 'cell-green' : 'cell-red';
+
+    const pnlClass = (w.realized_pnl||0) >= 0 ? 'cell-pos' : 'cell-neg';
+    const pnlSign = (w.realized_pnl||0) >= 0 ? '+' : '';
+
+    return `<tr class="${excluded ? 'excluded-row' : ''}" data-wallet="${w.proxyWallet}">
+      <td style="color:var(--text3);font-size:12px;font-weight:600">${i+1}</td>
       <td>
         <div class="wallet-cell">
           <div class="avatar">${initials}</div>
           <div>
-            <div class="wallet-name">${w.userName || '<em style="color:var(--text2)">anonymous</em>'}</div>
+            <div class="wallet-name">${w.userName || '<em style="color:var(--text3)">anon</em>'}</div>
             <div class="wallet-addr">${shortAddr}</div>
           </div>
         </div>
       </td>
       <td>
         ${excluded
-          ? '<span style="color:var(--text2);font-size:12px">excluded</span>'
+          ? '<span style="color:var(--text3);font-size:11px">excluded</span>'
           : `<div class="score-bar-wrap">
-              <div class="score-bar" style="width:${scoreW}px;max-width:80px"></div>
+              <div class="score-bar-bg"><div class="score-bar" style="width:${scoreW}px"></div></div>
               <span class="score-num">${w.alpha_score.toFixed(2)}</span>
             </div>`}
       </td>
-      <td><span class="badge ${wrClass} winrate">${wr}%</span></td>
-      <td style="font-weight:600">${w.resolved_markets}</td>
-      <td class="${pnlClass}">${pnlSign}$${fmt(w.realized_pnl)}</td>
-      <td>
-        <div class="score-bar-wrap">
-          <div class="conc-bar" style="width:${concW}px;max-width:80px"></div>
-          <span style="font-size:12px;color:var(--text2)">${(w.concentration * 100).toFixed(0)}%</span>
-        </div>
-      </td>
-      <td style="color:${w.avg_pct_return >= 0 ? 'var(--green)' : 'var(--red)'}">${avgRet}</td>
-      <td style="color:var(--text2)">${w.open_markets || 0}</td>
-      <td class="${unrealClass}">${unrealSign}$${fmt(w.open_unrealized || 0)}</td>
+      <td class="sep-col"><span class="badge ${wrClass}">${pct(w.win_rate||0)}</span></td>
+      <td class="${pnlClass}">${pnlSign}$${fmt(w.realized_pnl||0)}</td>
+      <td class="${roiClass}">${(w.roi_realized||0).toFixed(1)}%</td>
+      <td class="${pfClass}">${(w.profit_factor||0).toFixed(2)}</td>
+      <td class="${ddClass}">${pct(w.max_drawdown||0)}</td>
+      <td class="sep-col ${aoClass}">${(w.accuracy_vs_odds||0).toFixed(3)}</td>
+      <td class="${csClass}">${(w.consistency_score||0).toFixed(3)}</td>
+      <td class="sep-col" style="font-weight:600">${w.resolved_markets||0}</td>
+      <td style="color:var(--text2)">${fmtK(w.total_volume_usdc||0)}</td>
+      <td style="color:var(--text2)">${w.avg_hold_days!=null ? w.avg_hold_days.toFixed(1)+'d' : '—'}</td>
+      <td style="color:var(--text2)">${w.trades_per_day!=null ? w.trades_per_day.toFixed(2) : '—'}</td>
+      <td class="sep-col" style="color:var(--text2)">${w.diversification!=null ? w.diversification.toFixed(3) : '—'}</td>
+      <td style="color:var(--text2)">${w.max_position_pct!=null ? pct(w.max_position_pct) : '—'}</td>
+      <td class="${ybClass}">${ybStr}</td>
     </tr>`;
   }).join('');
+
+  // Re-attach row click handlers
+  document.querySelectorAll('#tbody tr[data-wallet]').forEach(tr => {
+    tr.onclick = () => openPanel(tr.dataset.wallet);
+  });
 }
 
+// ============================================================
+// DETAIL PANEL
+// ============================================================
+function openPanel(walletAddr) {
+  const w = allWallets.find(x => x.proxyWallet === walletAddr);
+  if (!w) return;
+  selectedWallet = walletAddr;
+
+  // Highlight row
+  document.querySelectorAll('#tbody tr').forEach(tr => tr.classList.remove('selected'));
+  document.querySelector(`#tbody tr[data-wallet="${walletAddr}"]`)?.classList.add('selected');
+
+  document.getElementById('panel-avatar').textContent = (w.userName || w.proxyWallet || '?').slice(0,2).toUpperCase();
+  document.getElementById('panel-name').textContent = w.userName || 'Anonymous';
+  document.getElementById('panel-addr').textContent = w.proxyWallet || '—';
+
+  const sections = [
+    {
+      title: '⭐ Alpha Score',
+      metrics: [
+        { label: 'Alpha Score', value: (w.alpha_score||0).toFixed(3), cls: 'blue' },
+        { label: 'Leaderboard PnL', value: '$'+fmt(w.lb_pnl||0), cls: '' },
+      ]
+    },
+    {
+      title: '💰 Performance',
+      metrics: [
+        { label: 'Realized PnL', value: '$'+fmt(w.realized_pnl||0), cls: (w.realized_pnl||0)>=0?'green':'red' },
+        { label: 'Unrealized PnL', value: '$'+fmt(w.open_unrealized||0), cls: (w.open_unrealized||0)>=0?'green':'red' },
+        { label: 'ROI Realized', value: (w.roi_realized||0).toFixed(1)+'%', cls: (w.roi_realized||0)>20?'green':(w.roi_realized||0)>0?'yellow':'red' },
+        { label: 'Win Rate', value: pct(w.win_rate||0), cls: (w.win_rate||0)>=0.65?'green':(w.win_rate||0)>=0.5?'yellow':'red' },
+        { label: 'Wins', value: w.wins||0, cls: 'green' },
+        { label: 'Losses', value: w.losses||0, cls: 'red' },
+        { label: 'Profit Factor', value: (w.profit_factor||0).toFixed(3), cls: (w.profit_factor||0)>=1.5?'green':(w.profit_factor||0)>=1?'yellow':'red' },
+        { label: 'Max Drawdown', value: pct(w.max_drawdown||0), cls: (w.max_drawdown||0)<0.1?'green':(w.max_drawdown||0)<0.3?'yellow':'red' },
+        { label: 'Best Market PnL', value: '$'+fmt(w.best_market_pnl||0), cls: 'green' },
+        { label: 'Concentration', value: pct(w.concentration||0), cls: (w.concentration||0)<0.3?'green':(w.concentration||0)<0.5?'yellow':'red' },
+        { label: 'Avg % Return', value: pct(w.avg_pct_return||0), cls: (w.avg_pct_return||0)>0?'green':'red' },
+      ]
+    },
+    {
+      title: '🎯 Edge & Precision',
+      metrics: [
+        { label: 'Accuracy vs Odds', value: (w.accuracy_vs_odds||0).toFixed(4), cls: (w.accuracy_vs_odds||0)>0.1?'green':(w.accuracy_vs_odds||0)>0?'yellow':'red' },
+        { label: 'Avg Entry Price', value: (w.avg_entry_price||0).toFixed(4), cls: '' },
+        { label: 'Consistency Score', value: (w.consistency_score||0).toFixed(4), cls: (w.consistency_score||0)>0.5?'green':(w.consistency_score||0)>0?'yellow':'red' },
+      ]
+    },
+    {
+      title: '🔄 Behavior & Activity',
+      metrics: [
+        { label: 'Resolved Markets', value: w.resolved_markets||0, cls: 'blue' },
+        { label: 'Open Markets', value: w.open_markets||0, cls: '' },
+        { label: 'Total Volume', value: '$'+fmtK(w.total_volume_usdc||0), cls: '' },
+        { label: 'Avg Hold Days', value: (w.avg_hold_days||0).toFixed(1)+'d', cls: '' },
+        { label: 'Trades/Day', value: (w.trades_per_day||0).toFixed(3), cls: '' },
+        { label: 'Wallet Age', value: (w.wallet_age_days||0)+' days', cls: '' },
+      ]
+    },
+    {
+      title: '🛡️ Risk Management',
+      metrics: [
+        { label: 'Diversification', value: (w.diversification||0).toFixed(3), cls: (w.diversification||0)>0.7?'green':'yellow' },
+        { label: 'Max Position %', value: pct(w.max_position_pct||0), cls: (w.max_position_pct||0)<0.2?'green':(w.max_position_pct||0)<0.3?'yellow':'red' },
+        { label: 'Exit Discipline', value: (w.exit_discipline||0).toFixed(3), cls: '' },
+        { label: 'Maker Ratio', value: (w.maker_ratio||0).toFixed(3), cls: '' },
+      ]
+    },
+    {
+      title: '🌍 Context',
+      metrics: [
+        { label: 'YES Bias', value: ((w.yes_bias||0)>=0?'+':'')+(w.yes_bias||0).toFixed(3), cls: Math.abs(w.yes_bias||0)<0.2?'':'yellow' },
+        { label: 'Avg Entry Timing', value: (w.avg_entry_timing_days||0).toFixed(1)+'d', cls: '' },
+      ]
+    },
+  ];
+
+  document.getElementById('panel-body').innerHTML = sections.map(s => `
+    <div class="panel-section">
+      <div class="panel-section-title">${s.title}</div>
+      <div class="panel-metrics">
+        ${s.metrics.map(m => `
+          <div class="panel-metric">
+            <div class="pm-label">${m.label}</div>
+            <div class="pm-value ${m.cls}">${m.value}</div>
+          </div>
+        `).join('')}
+      </div>
+    </div>
+  `).join('');
+
+  document.getElementById('detail-panel').classList.add('open');
+  document.getElementById('panel-overlay').classList.add('visible');
+}
+
+function closePanel() {
+  document.getElementById('detail-panel').classList.remove('open');
+  document.getElementById('panel-overlay').classList.remove('visible');
+  document.querySelectorAll('#tbody tr').forEach(tr => tr.classList.remove('selected'));
+  selectedWallet = null;
+}
+
+document.getElementById('panel-close').onclick = closePanel;
+document.getElementById('panel-overlay').onclick = closePanel;
+
+// ============================================================
+// EXPORT CSV
+// ============================================================
+document.getElementById('export-btn').onclick = () => {
+  const rows = sorted(getFiltered());
+  if (!rows.length) { alert('No data to export.'); return; }
+  const cols = [
+    'rank','proxyWallet','userName','alpha_score',
+    'win_rate','realized_pnl','roi_realized','profit_factor','max_drawdown',
+    'accuracy_vs_odds','consistency_score',
+    'resolved_markets','total_volume_usdc','avg_hold_days','trades_per_day',
+    'diversification','max_position_pct','yes_bias',
+    'open_markets','open_unrealized','concentration','avg_pct_return',
+    'wallet_age_days','avg_entry_price',
+  ];
+  const header = cols.join(',');
+  const body = rows.map(w =>
+    cols.map(c => {
+      const v = w[c];
+      if (v == null) return '';
+      if (typeof v === 'string') return `"${v.replace(/"/g,'""')}"`;
+      return v;
+    }).join(',')
+  ).join('\n');
+  const blob = new Blob([header + '\n' + body], { type: 'text/csv' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  a.href = url; a.download = 'alpha_wallets_export.csv'; a.click();
+  URL.revokeObjectURL(url);
+};
+
+// ============================================================
+// HELPERS
+// ============================================================
 function fmt(n) {
   if (n == null) return '—';
   n = Number(n);
-  if (Math.abs(n) >= 1000000) return (n/1000000).toFixed(2) + 'M';
-  if (Math.abs(n) >= 1000) return (n/1000).toFixed(1) + 'K';
+  if (Math.abs(n) >= 1e6) return (n/1e6).toFixed(2)+'M';
+  if (Math.abs(n) >= 1e3) return (n/1e3).toFixed(1)+'K';
   return n.toFixed(2);
 }
+function fmtK(n) {
+  if (n == null) return '—';
+  n = Number(n);
+  if (Math.abs(n) >= 1e6) return '$'+(n/1e6).toFixed(2)+'M';
+  if (Math.abs(n) >= 1e3) return '$'+(n/1e3).toFixed(1)+'K';
+  return '$'+n.toFixed(0);
+}
+function pct(v) {
+  return (Number(v||0)*100).toFixed(1)+'%';
+}
+
+// Keyboard shortcut: Esc closes panel
+document.addEventListener('keydown', e => { if (e.key === 'Escape') closePanel(); });
 </script>
 </body>
 </html>
