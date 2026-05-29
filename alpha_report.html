@@ -1,0 +1,392 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Polymarket Alpha Wallets</title>
+<style>
+  :root {
+    --bg: #0d1117;
+    --bg2: #161b22;
+    --bg3: #21262d;
+    --border: #30363d;
+    --text: #e6edf3;
+    --text2: #8b949e;
+    --green: #3fb950;
+    --red: #f85149;
+    --yellow: #d29922;
+    --blue: #58a6ff;
+    --purple: #bc8cff;
+  }
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body { background: var(--bg); color: var(--text); font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif; font-size: 14px; }
+
+  /* ---- Header ---- */
+  header { background: var(--bg2); border-bottom: 1px solid var(--border); padding: 18px 28px; display: flex; align-items: center; gap: 16px; flex-wrap: wrap; }
+  header h1 { font-size: 18px; font-weight: 600; }
+  header h1 span { color: var(--blue); }
+  #meta { color: var(--text2); font-size: 12px; margin-left: auto; }
+
+  /* ---- Toolbar ---- */
+  #toolbar { padding: 14px 28px; display: flex; gap: 12px; flex-wrap: wrap; align-items: center; border-bottom: 1px solid var(--border); background: var(--bg2); }
+  input[type=search] { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 12px; width: 220px; outline: none; font-size: 13px; }
+  input[type=search]:focus { border-color: var(--blue); }
+  select { background: var(--bg3); border: 1px solid var(--border); color: var(--text); border-radius: 6px; padding: 6px 10px; font-size: 13px; outline: none; cursor: pointer; }
+  .filter-group { display: flex; align-items: center; gap: 8px; }
+  .filter-group label { color: var(--text2); font-size: 12px; white-space: nowrap; }
+  input[type=range] { accent-color: var(--blue); width: 100px; cursor: pointer; }
+  #range-val { color: var(--blue); font-size: 12px; min-width: 28px; }
+  #count-badge { margin-left: auto; background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; padding: 4px 12px; font-size: 12px; color: var(--text2); }
+  #count-badge b { color: var(--text); }
+  #load-btn { background: var(--blue); color: #000; border: none; border-radius: 6px; padding: 6px 14px; font-size: 13px; font-weight: 600; cursor: pointer; }
+  #load-btn:hover { opacity: 0.85; }
+
+  /* ---- Stats cards ---- */
+  #stats { display: grid; grid-template-columns: repeat(auto-fit, minmax(160px, 1fr)); gap: 12px; padding: 16px 28px; }
+  .card { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 14px 16px; }
+  .card .label { font-size: 11px; color: var(--text2); text-transform: uppercase; letter-spacing: .05em; margin-bottom: 6px; }
+  .card .value { font-size: 22px; font-weight: 700; }
+  .card .value.green { color: var(--green); }
+  .card .value.blue { color: var(--blue); }
+  .card .value.yellow { color: var(--yellow); }
+  .card .value.purple { color: var(--purple); }
+
+  /* ---- Table ---- */
+  #table-wrap { overflow-x: auto; padding: 0 28px 40px; }
+  table { width: 100%; border-collapse: collapse; min-width: 900px; }
+  thead th {
+    background: var(--bg2); padding: 10px 12px; text-align: left;
+    font-size: 11px; text-transform: uppercase; letter-spacing: .05em;
+    color: var(--text2); border-bottom: 1px solid var(--border);
+    cursor: pointer; user-select: none; white-space: nowrap; position: sticky; top: 0;
+  }
+  thead th:hover { color: var(--text); }
+  thead th.sorted-asc::after { content: " ↑"; color: var(--blue); }
+  thead th.sorted-desc::after { content: " ↓"; color: var(--blue); }
+  tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+  tbody tr:hover { background: var(--bg2); }
+  tbody td { padding: 10px 12px; vertical-align: middle; }
+  .wallet-cell { display: flex; align-items: center; gap: 8px; }
+  .avatar { width: 28px; height: 28px; border-radius: 50%; background: var(--bg3); display: flex; align-items: center; justify-content: center; font-size: 11px; font-weight: 700; color: var(--blue); flex-shrink: 0; }
+  .wallet-addr { font-family: monospace; font-size: 12px; color: var(--text2); }
+  .wallet-name { font-size: 13px; font-weight: 500; }
+  .score-bar-wrap { display: flex; align-items: center; gap: 8px; }
+  .score-bar { height: 6px; border-radius: 3px; background: var(--blue); min-width: 2px; }
+  .score-num { font-size: 13px; font-weight: 600; color: var(--blue); min-width: 36px; }
+  .winrate { font-weight: 600; }
+  .pnl-pos { color: var(--green); font-weight: 600; }
+  .pnl-neg { color: var(--red); font-weight: 600; }
+  .conc-bar { height: 6px; border-radius: 3px; background: var(--yellow); min-width: 2px; }
+  .badge { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 600; }
+  .badge-green { background: rgba(63,185,80,.15); color: var(--green); border: 1px solid rgba(63,185,80,.3); }
+  .badge-red { background: rgba(248,81,73,.12); color: var(--red); border: 1px solid rgba(248,81,73,.25); }
+  .badge-yellow { background: rgba(210,153,34,.12); color: var(--yellow); border: 1px solid rgba(210,153,34,.25); }
+  .excluded-row { opacity: 0.45; }
+  .empty { text-align: center; padding: 60px; color: var(--text2); }
+
+  /* ---- Upload zone ---- */
+  #upload-zone { display: none; border: 2px dashed var(--border); border-radius: 12px; margin: 40px 28px; padding: 60px; text-align: center; cursor: pointer; transition: border-color .2s; }
+  #upload-zone.visible { display: block; }
+  #upload-zone:hover, #upload-zone.drag { border-color: var(--blue); }
+  #upload-zone p { color: var(--text2); margin-top: 8px; font-size: 13px; }
+  #upload-zone .icon { font-size: 40px; }
+
+  /* ---- Tooltip ---- */
+  [data-tip] { position: relative; }
+  [data-tip]:hover::after { content: attr(data-tip); position: absolute; bottom: 125%; left: 50%; transform: translateX(-50%); background: #000; color: #fff; font-size: 11px; padding: 4px 8px; border-radius: 4px; white-space: nowrap; z-index: 99; pointer-events: none; }
+</style>
+</head>
+<body>
+
+<header>
+  <svg width="24" height="24" viewBox="0 0 24 24" fill="none" stroke="#58a6ff" stroke-width="2"><polygon points="12 2 15.09 8.26 22 9.27 17 14.14 18.18 21.02 12 17.77 5.82 21.02 7 14.14 2 9.27 8.91 8.26 12 2"/></svg>
+  <h1>Polymarket <span>Alpha Wallets</span></h1>
+  <div id="meta">No data loaded</div>
+</header>
+
+<div id="toolbar">
+  <input type="search" id="search" placeholder="Search name or wallet...">
+
+  <div class="filter-group">
+    <label>Min score</label>
+    <input type="range" id="min-score" min="0" max="10" step="0.5" value="0">
+    <span id="range-val">0</span>
+  </div>
+
+  <div class="filter-group">
+    <label>Min win rate</label>
+    <select id="min-wr">
+      <option value="0">Any</option>
+      <option value="0.5">≥ 50%</option>
+      <option value="0.6">≥ 60%</option>
+      <option value="0.7">≥ 70%</option>
+    </select>
+  </div>
+
+  <div class="filter-group">
+    <label>Min markets</label>
+    <select id="min-mkts">
+      <option value="0">Any</option>
+      <option value="10">≥ 10</option>
+      <option value="20">≥ 20</option>
+      <option value="50">≥ 50</option>
+    </select>
+  </div>
+
+  <div class="filter-group">
+    <label>Show excluded</label>
+    <input type="checkbox" id="show-excluded">
+  </div>
+
+  <span id="count-badge">Showing <b id="row-count">0</b> wallets</span>
+  <button id="load-btn">📂 Load JSON</button>
+  <input type="file" id="file-input" accept=".json" style="display:none">
+</div>
+
+<div id="stats">
+  <div class="card"><div class="label">Total wallets</div><div class="value blue" id="s-total">—</div></div>
+  <div class="card"><div class="label">Qualified</div><div class="value green" id="s-qualified">—</div></div>
+  <div class="card"><div class="label">Avg win rate</div><div class="value yellow" id="s-winrate">—</div></div>
+  <div class="card"><div class="label">Avg alpha score</div><div class="value purple" id="s-score">—</div></div>
+  <div class="card"><div class="label">Total realized PnL</div><div class="value green" id="s-pnl">—</div></div>
+  <div class="card"><div class="label">Generated at</div><div class="value" id="s-time" style="font-size:14px;color:var(--text2)">—</div></div>
+</div>
+
+<div id="upload-zone" class="visible" id="upload-zone">
+  <div class="icon">📊</div>
+  <h2 style="margin-top:12px">Drop <code>alpha_wallets_report.json</code> here</h2>
+  <p>Or click "Load JSON" above · Generated by <code>discover_alpha.py</code></p>
+</div>
+
+<div id="table-wrap" style="display:none">
+<table>
+  <thead>
+    <tr>
+      <th data-col="rank" class="sorted-asc">#</th>
+      <th data-col="userName">Name</th>
+      <th data-col="alpha_score" data-tip="Composite skill score">Score</th>
+      <th data-col="win_rate" data-tip="Wins / (wins + losses)">Win Rate</th>
+      <th data-col="resolved_markets" data-tip="Distinct resolved markets">Markets</th>
+      <th data-col="realized_pnl" data-tip="Booked profit from resolved positions">Realized PnL</th>
+      <th data-col="concentration" data-tip="Fraction of profit from single best market (lower = better)">Concentration</th>
+      <th data-col="avg_pct_return" data-tip="Average % return per resolved market">Avg Return</th>
+      <th data-col="open_markets">Open Pos</th>
+      <th data-col="open_unrealized" data-tip="Unrealized PnL on open positions">Unrealized</th>
+    </tr>
+  </thead>
+  <tbody id="tbody"></tbody>
+</table>
+</div>
+
+<script>
+let allWallets = [];
+let sortCol = 'alpha_score';
+let sortAsc = false;
+let maxScore = 10;
+
+// ---- Load file ----
+document.getElementById('load-btn').onclick = () => document.getElementById('file-input').click();
+document.getElementById('file-input').onchange = e => loadFile(e.target.files[0]);
+
+const zone = document.getElementById('upload-zone');
+zone.onclick = () => document.getElementById('file-input').click();
+zone.ondragover = e => { e.preventDefault(); zone.classList.add('drag'); };
+zone.ondragleave = () => zone.classList.remove('drag');
+zone.ondrop = e => { e.preventDefault(); zone.classList.remove('drag'); loadFile(e.dataTransfer.files[0]); };
+
+function loadFile(file) {
+  if (!file) return;
+  const r = new FileReader();
+  r.onload = e => {
+    try {
+      const data = JSON.parse(e.target.result);
+      // Accept both formats: raw array OR {wallets:[...], generated_at:...}
+      if (Array.isArray(data)) {
+        allWallets = data.map((w, i) => ({ ...w, rank: i + 1 }));
+        updateMeta({ generated_at: null, params: {} });
+      } else {
+        allWallets = (data.wallets || []).map((w, i) => ({ ...w, rank: i + 1 }));
+        updateMeta(data);
+      }
+      maxScore = Math.max(...allWallets.map(w => w.alpha_score || 0), 10);
+      document.getElementById('min-score').max = maxScore.toFixed(1);
+      updateStats();
+      render();
+      zone.classList.remove('visible');
+      document.getElementById('table-wrap').style.display = '';
+    } catch (err) {
+      alert('Invalid JSON: ' + err.message);
+    }
+  };
+  r.readAsText(file);
+}
+
+// Try auto-load from same directory
+fetch('alpha_wallets_report.json')
+  .then(r => r.ok ? r.json() : null)
+  .then(data => { if (data) { const e = { target: { result: JSON.stringify(data) } }; /* reuse */ loadFromObj(data); } })
+  .catch(() => {});
+
+function loadFromObj(data) {
+  if (Array.isArray(data)) {
+    allWallets = data.map((w, i) => ({ ...w, rank: i + 1 }));
+    updateMeta({});
+  } else {
+    allWallets = (data.wallets || []).map((w, i) => ({ ...w, rank: i + 1 }));
+    updateMeta(data);
+  }
+  maxScore = Math.max(...allWallets.map(w => w.alpha_score || 0), 10);
+  document.getElementById('min-score').max = maxScore.toFixed(1);
+  updateStats();
+  render();
+  zone.classList.remove('visible');
+  document.getElementById('table-wrap').style.display = '';
+}
+
+function updateMeta(data) {
+  const ts = data.generated_at ? new Date(data.generated_at).toLocaleString() : '—';
+  const p = data.params || {};
+  document.getElementById('meta').textContent =
+    `Generated: ${ts}  ·  ${p.category || ''}  ${p.period || ''}  ·  Pool: ${p.pool_size || allWallets.length}`;
+}
+
+function updateStats() {
+  const qualified = allWallets.filter(w => w.alpha_score > 0);
+  const avgWr = qualified.length ? qualified.reduce((a, w) => a + w.win_rate, 0) / qualified.length : 0;
+  const avgScore = qualified.length ? qualified.reduce((a, w) => a + w.alpha_score, 0) / qualified.length : 0;
+  const totalPnl = qualified.reduce((a, w) => a + (w.realized_pnl || 0), 0);
+
+  document.getElementById('s-total').textContent = allWallets.length;
+  document.getElementById('s-qualified').textContent = qualified.length;
+  document.getElementById('s-winrate').textContent = (avgWr * 100).toFixed(1) + '%';
+  document.getElementById('s-score').textContent = avgScore.toFixed(2);
+  document.getElementById('s-pnl').textContent = '$' + fmt(totalPnl);
+
+  const ts = allWallets[0]?.generated_at || document.getElementById('meta').textContent.split('Generated: ')[1]?.split('  ')[0] || '—';
+  document.getElementById('s-time').textContent = ts === '—' ? '—' : ts;
+}
+
+// ---- Filters ----
+['search','min-score','min-wr','min-mkts','show-excluded'].forEach(id => {
+  document.getElementById(id).addEventListener('input', render);
+});
+document.getElementById('min-score').addEventListener('input', function() {
+  document.getElementById('range-val').textContent = this.value;
+  render();
+});
+
+function getFiltered() {
+  const q = document.getElementById('search').value.toLowerCase().trim();
+  const minScore = parseFloat(document.getElementById('min-score').value);
+  const minWr = parseFloat(document.getElementById('min-wr').value);
+  const minMkts = parseInt(document.getElementById('min-mkts').value);
+  const showExcluded = document.getElementById('show-excluded').checked;
+
+  return allWallets.filter(w => {
+    if (!showExcluded && w.alpha_score <= 0) return false;
+    if (w.alpha_score < minScore) return false;
+    if (w.win_rate < minWr) return false;
+    if (w.resolved_markets < minMkts) return false;
+    if (q) {
+      const name = (w.userName || '').toLowerCase();
+      const addr = (w.proxyWallet || '').toLowerCase();
+      if (!name.includes(q) && !addr.includes(q)) return false;
+    }
+    return true;
+  });
+}
+
+// ---- Sort ----
+document.querySelectorAll('thead th[data-col]').forEach(th => {
+  th.onclick = () => {
+    const col = th.dataset.col;
+    if (sortCol === col) { sortAsc = !sortAsc; }
+    else { sortCol = col; sortAsc = col === 'rank'; }
+    document.querySelectorAll('thead th').forEach(t => t.classList.remove('sorted-asc','sorted-desc'));
+    th.classList.add(sortAsc ? 'sorted-asc' : 'sorted-desc');
+    render();
+  };
+});
+
+function sorted(arr) {
+  return [...arr].sort((a, b) => {
+    let va = a[sortCol] ?? 0, vb = b[sortCol] ?? 0;
+    if (typeof va === 'string') va = va.toLowerCase(), vb = (vb||'').toLowerCase();
+    if (va < vb) return sortAsc ? -1 : 1;
+    if (va > vb) return sortAsc ? 1 : -1;
+    return 0;
+  });
+}
+
+// ---- Render ----
+function render() {
+  const rows = sorted(getFiltered());
+  document.getElementById('row-count').textContent = rows.length;
+  const tbody = document.getElementById('tbody');
+
+  if (!rows.length) {
+    tbody.innerHTML = '<tr><td colspan="10" class="empty">No wallets match the current filters.</td></tr>';
+    return;
+  }
+
+  const scoreMax = Math.max(...rows.map(w => w.alpha_score || 0), 1);
+
+  tbody.innerHTML = rows.map((w, i) => {
+    const excluded = w.alpha_score <= 0;
+    const wr = (w.win_rate * 100).toFixed(1);
+    const wrClass = w.win_rate >= 0.65 ? 'badge-green' : w.win_rate >= 0.5 ? 'badge-yellow' : 'badge-red';
+    const pnlClass = w.realized_pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    const pnlSign = w.realized_pnl >= 0 ? '+' : '';
+    const scoreW = Math.round((w.alpha_score / scoreMax) * 100);
+    const concW = Math.round(w.concentration * 100);
+    const initials = (w.userName || w.proxyWallet || '?').slice(0, 2).toUpperCase();
+    const shortAddr = w.proxyWallet ? w.proxyWallet.slice(0, 6) + '...' + w.proxyWallet.slice(-4) : '—';
+    const avgRet = w.avg_pct_return != null ? (w.avg_pct_return * 100).toFixed(1) + '%' : '—';
+    const unrealClass = (w.open_unrealized || 0) >= 0 ? 'pnl-pos' : 'pnl-neg';
+    const unrealSign = (w.open_unrealized || 0) >= 0 ? '+' : '';
+
+    return `<tr class="${excluded ? 'excluded-row' : ''}">
+      <td style="color:var(--text2);font-size:12px">${i + 1}</td>
+      <td>
+        <div class="wallet-cell">
+          <div class="avatar">${initials}</div>
+          <div>
+            <div class="wallet-name">${w.userName || '<em style="color:var(--text2)">anonymous</em>'}</div>
+            <div class="wallet-addr">${shortAddr}</div>
+          </div>
+        </div>
+      </td>
+      <td>
+        ${excluded
+          ? '<span style="color:var(--text2);font-size:12px">excluded</span>'
+          : `<div class="score-bar-wrap">
+              <div class="score-bar" style="width:${scoreW}px;max-width:80px"></div>
+              <span class="score-num">${w.alpha_score.toFixed(2)}</span>
+            </div>`}
+      </td>
+      <td><span class="badge ${wrClass} winrate">${wr}%</span></td>
+      <td style="font-weight:600">${w.resolved_markets}</td>
+      <td class="${pnlClass}">${pnlSign}$${fmt(w.realized_pnl)}</td>
+      <td>
+        <div class="score-bar-wrap">
+          <div class="conc-bar" style="width:${concW}px;max-width:80px"></div>
+          <span style="font-size:12px;color:var(--text2)">${(w.concentration * 100).toFixed(0)}%</span>
+        </div>
+      </td>
+      <td style="color:${w.avg_pct_return >= 0 ? 'var(--green)' : 'var(--red)'}">${avgRet}</td>
+      <td style="color:var(--text2)">${w.open_markets || 0}</td>
+      <td class="${unrealClass}">${unrealSign}$${fmt(w.open_unrealized || 0)}</td>
+    </tr>`;
+  }).join('');
+}
+
+function fmt(n) {
+  if (n == null) return '—';
+  n = Number(n);
+  if (Math.abs(n) >= 1000000) return (n/1000000).toFixed(2) + 'M';
+  if (Math.abs(n) >= 1000) return (n/1000).toFixed(1) + 'K';
+  return n.toFixed(2);
+}
+</script>
+</body>
+</html>

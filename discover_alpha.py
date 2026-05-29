@@ -279,6 +279,25 @@ def main():
     with open(args.out, "w") as f:
         json.dump([p.to_row() for p in top], f, indent=2)
     print(f"\nSaved watchlist -> {args.out}")
+
+    # Also write full candidate list for the HTML report (includes excluded wallets)
+    report_path = args.out.replace(".json", "_report.json")
+    report = {
+        "generated_at": time.strftime("%Y-%m-%dT%H:%M:%S"),
+        "params": {
+            "category": args.category,
+            "period": args.period,
+            "order_by": args.order,
+            "pool_size": len(candidates),
+            "min_markets": globals()["MIN_MARKETS"],
+        },
+        "wallets": [p.to_row() for p in sorted(profiles,
+                    key=lambda x: x.alpha_score, reverse=True)],
+    }
+    with open(report_path, "w") as f:
+        json.dump(report, f, indent=2)
+    print(f"Saved full report  -> {report_path}")
+    print(f"Open alpha_report.html in your browser to explore results.")
     print("Next stage: feed proxyWallet addresses into the position watcher.")
 
 
