@@ -183,6 +183,10 @@ class WalletProfile:
     # --- 🧺 Pool-Level Consensus ---
     basket_consensus_score: float = 0.0  # -0.1..+0.2 pool agreement bonus
 
+    # --- 📋 Copyability (separate from alpha_score) ---
+    copyability_score: float = 50.0     # 0-100: how well this wallet can be copy-traded
+    copyability_label: str = "⚠️ Moderate"  # 🟢 Easy / ⚠️ Moderate / 🔴 Hard
+
     # --- Composite ---
     alpha_score: float = 0.0
 
@@ -523,6 +527,77 @@ def _liquidity_score(max_position_pct: float) -> float:
         return 0.1    # ✅ lichiditate sănătoasă
 
 
+def _copyability_score(prof) -> tuple[float, str]:
+    """
+    Măsoară cât de bine strategia wallet-ului poate fi replicată practic.
+    Separat de alpha_score: un wallet excelent (alpha_score înalt) poate fi
+    greu de copiat dacă face poziții gigant în piețe illichide.
+
+    Folosește DOAR date disponibile din API fără integrări noi.
+    Returns (score 0-100, label).
+    """
+    factors = {}
+
+    # 1. Concentrare poziție: >30% dintr-o piață → risc de impact pe piață / spread uriaș
+    # Scor maxim la <5%, zero la >40%
+    conc = prof.max_position_pct  # 0..1
+    factors["concentration"] = max(0.0, 1.0 - conc / 0.40)
+
+    # 2. Frecvență: prea multe trade-uri/lună = greu de urmărit manual;
+    # prea puține = semnal rar, statistică slabă. Optim: 10-100/lună.
+    tpm = prof.trades_per_month
+    if 10 <= tpm <= 100:
+        factors["frequency"] = 1.0
+    elif tpm < 5 or tpm > 300:
+        factors["frequency"] = 0.2
+    else:
+        # interpolezi lin între 5-10 și 100-300
+        if tpm < 10:
+            factors["frequency"] = 0.2 + 0.8 * (tpm - 5) / 5
+        else:
+            factors["frequency"] = 1.0 - 0.8 * (tpm - 100) / 200
+
+    # 3. Diversificare: un specialist pe 1 piață → slippage sistematic dacă băgăm și noi
+    # diversification = unique_markets / total_positions; vrem > 0.5
+    div = prof.diversification  # 0..1
+    factors["diversification"] = min(1.0, div / 0.5)
+
+    # 4. Trader tip: bot → execuție algoritmică imposibil de replicat manual
+    type_score = {"MANUAL": 1.0, "CASUAL": 0.8, "HIGH_FREQ": 0.3, "BOT": 0.0,
+                  "UNKNOWN": 0.6}
+    factors["trader_type"] = type_score.get(prof.trader_type, 0.6)
+
+    # 5. Sizing consistency (via consistency_score proxy): dacă profitul e extrem de
+    # concentrat (GAMBLOR) → imposibil de reprodus fără ace aceeași poziție gigant.
+    # Folosim concentration + profit_factor ca proxy inversat pentru „una mare".
+    if prof.concentration > 0.70:  # >70% profit dintr-o singură piață
+        factors["sizing_replicability"] = 0.2
+    elif prof.concentration > 0.40:
+        factors["sizing_replicability"] = 0.6
+    else:
+        factors["sizing_replicability"] = 1.0
+
+    weights = {
+        "concentration":      0.35,
+        "frequency":          0.20,
+        "diversification":    0.20,
+        "trader_type":        0.15,
+        "sizing_replicability": 0.10,
+    }
+
+    raw = sum(factors[k] * weights[k] for k in factors)
+    score = round(raw * 100, 1)
+
+    if score >= 70:
+        label = "🟢 Easy"
+    elif score >= 40:
+        label = "⚠️ Moderate"
+    else:
+        label = "🔴 Hard"
+
+    return score, label
+
+
 def _compute_red_flags(prof) -> tuple[list, str, str]:
     """
     Evaluează RED_FLAGS și returnează (flags, risk_level, copy_recommendation).
@@ -548,7 +623,14 @@ def _compute_red_flags(prof) -> tuple[list, str, str]:
         rec = "⚠️ Small size"
     else:
         level = "🟢 LOW"
-        rec = "✅ Consider"
+        # Enrich recommendation with copyability signal (computed before this call)
+        cs = getattr(prof, "copyability_score", 50.0)
+        if cs >= 70:
+            rec = "✅ Easy copy"
+        elif cs >= 40:
+            rec = "✅ Consider"
+        else:
+            rec = "⚠️ Hard to copy"
     return triggered, level, rec
 
 
@@ -641,6 +723,7 @@ def profile_wallet(cand):
     prof.performance_decay_score = _performance_decay_score(
         prof.recent_30d_roi, prof.roi_realized)
     prof.liquidity_score = _liquidity_score(prof.max_position_pct)
+    prof.copyability_score, prof.copyability_label = _copyability_score(prof)
 
     # Red flags evaluated here (sybil_risk still 0 — will be recomputed after pool pass)
     prof.risk_flags, prof.risk_level, prof.copy_recommendation = _compute_red_flags(prof)

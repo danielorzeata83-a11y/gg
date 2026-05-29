@@ -42,6 +42,7 @@ import json
 import time
 import argparse
 import threading
+from collections import defaultdict
 from web3 import Web3
 
 # ---- Constants -------------------------------------------------------------
@@ -165,10 +166,123 @@ class SpeedMetrics:
         return {w: self.wallet_stats(w) for w in self._latencies}
 
 
+# ---- Convergence Detector --------------------------------------------------
+
+class ConvergenceDetector:
+    """
+    Detects when multiple independent alpha wallets enter the same market+side
+    within a rolling time window — a stronger signal than any single whale.
+
+    Usage: attach to AlphaWatcher via on_signal callback; each signal is fed
+    into feed(). When the threshold is crossed, on_convergence() is called
+    with a rich event dict.
+
+    This is a real-time layer on top of the on-chain stream — NOT historical
+    analysis like basket_consensus_score in discover_alpha.py. The difference:
+    basket_consensus = "these wallets generally trade the same markets (ever)"
+    convergence     = "3 wallets just bought YES on the same market in 18 min"
+    """
+
+    def __init__(self,
+                 window_seconds: int = 1800,
+                 min_wallets: int = 3,
+                 on_convergence=None):
+        self.window_seconds = window_seconds
+        self.min_wallets = min_wallets
+        self.on_convergence = on_convergence or self._default_handler
+        # key: (market_id, side) → list of {wallet, usdc, price, ts}
+        self._entries: dict = defaultdict(list)
+        self._lock = threading.Lock()
+
+    def feed(self, signal: dict):
+        """Call this for every signal from AlphaWatcher."""
+        market_id = signal.get("outcomeAssetId", "")
+        side = signal.get("side", "")
+        if not market_id or not side:
+            return
+
+        now = signal.get("detected_at", time.time())
+        key = (market_id, side)
+
+        with self._lock:
+            # Append entry
+            self._entries[key].append({
+                "wallet": signal["actor"],
+                "usdc": signal["usdc"],
+                "price": signal["price"],
+                "speed_score": signal.get("speed_score", 1.0),
+                "ts": now,
+            })
+
+            # Trim entries outside the rolling window
+            cutoff = now - self.window_seconds
+            self._entries[key] = [e for e in self._entries[key] if e["ts"] >= cutoff]
+
+            entries = self._entries[key]
+            unique_wallets = {e["wallet"] for e in entries}
+
+            if len(unique_wallets) >= self.min_wallets:
+                # Build convergence event and clear (avoid re-firing until new wallet)
+                event = self._build_event(key, entries, unique_wallets, now)
+                # Reset: keep only the latest entry per wallet to avoid constant refiring
+                # Clear bucket entirely — next convergence requires a fresh build-up.
+                # Prevents re-firing on every subsequent trade by the same wallet set.
+                self._entries[key] = []
+                self.on_convergence(event)
+
+    def _build_event(self, key, entries, unique_wallets, now):
+        market_id, side = key
+        usdc_total = sum(e["usdc"] for e in entries)
+        prices = [e["price"] for e in entries]
+        avg_price = sum(prices) / len(prices)
+        # Oldest entry in window → how long the signal has been building
+        oldest_ts = min(e["ts"] for e in entries)
+        window_used_min = round((now - oldest_ts) / 60, 1)
+        avg_speed = sum(e["speed_score"] for e in entries) / len(entries)
+
+        return {
+            "type": "CONVERGENCE",
+            "market_id": market_id,
+            "side": side,
+            "wallet_count": len(unique_wallets),
+            "wallets": sorted(unique_wallets),
+            "combined_usdc": round(usdc_total, 2),
+            "avg_price": round(avg_price, 4),
+            "window_used_min": window_used_min,
+            "avg_speed_score": round(avg_speed, 2),
+            "detected_at": now,
+        }
+
+    def _default_handler(self, event):
+        ts = time.strftime("%H:%M:%S")
+        side_emoji = "🟢" if event["side"] == "BUY" else "🔴"
+        print(
+            f"\n{'='*60}\n"
+            f"[{ts}] 🔔 CONVERGENCE SIGNAL {side_emoji}\n"
+            f"  Market:    {event['market_id']}\n"
+            f"  Side:      {event['side']} | Wallets: {event['wallet_count']} "
+            f"| Window: {event['window_used_min']}min\n"
+            f"  Combined:  ${event['combined_usdc']:,.0f} @ avg {event['avg_price']:.3f}\n"
+            f"  Wallets:   {', '.join(w[:10]+'...' for w in event['wallets'])}\n"
+            f"  Speed:     avg_score={event['avg_speed_score']:.2f}\n"
+            f"{'='*60}\n"
+        )
+
+    def stats(self) -> dict:
+        """Current active buckets and their fill level (for debugging)."""
+        with self._lock:
+            return {
+                f"{k[0][:12]}.../{k[1]}": len(v)
+                for k, v in self._entries.items() if v
+            }
+
+
 # ---- Watcher ---------------------------------------------------------------
 
 class AlphaWatcher:
-    def __init__(self, rpc_url, watched_wallets, on_signal=None):
+    def __init__(self, rpc_url, watched_wallets, on_signal=None,
+                 convergence_window=1800, convergence_min_wallets=3,
+                 on_convergence=None):
         self.rpc_url = rpc_url
         self.w3 = Web3(Web3.LegacyWebSocketProvider(rpc_url)
                        if rpc_url.startswith("ws")
@@ -178,6 +292,11 @@ class AlphaWatcher:
         self.on_signal = on_signal or self._default_handler
         self._seen = set()  # (txHash, orderHash) dedupe keys
         self.speed = SpeedMetrics()
+        self.convergence = ConvergenceDetector(
+            window_seconds=convergence_window,
+            min_wallets=convergence_min_wallets,
+            on_convergence=on_convergence,
+        )
 
     def _default_handler(self, sig):
         ts = time.strftime("%H:%M:%S")
@@ -234,6 +353,7 @@ class AlphaWatcher:
             "speed_score": stats["speed_score"],
         }
         self.on_signal(signal)
+        self.convergence.feed(signal)  # check for multi-wallet consensus
 
     # ---- WebSocket subscription (fast path) --------------------------------
 
@@ -329,6 +449,10 @@ def main():
                     help="JSON from discover_alpha.py, or a JSON list of addresses")
     ap.add_argument("--poll", type=float, default=2.0,
                     help="Seconds between log polls (used only if WebSocket unavailable)")
+    ap.add_argument("--convergence-window", type=int, default=1800,
+                    help="Rolling window in seconds for convergence detection (default 1800=30min)")
+    ap.add_argument("--convergence-min", type=int, default=3,
+                    help="Minimum wallets for convergence signal (default 3)")
     args = ap.parse_args()
 
     wallets = load_watchlist(args.watchlist)
@@ -336,7 +460,13 @@ def main():
         print("No wallets in watchlist. Run discover_alpha.py first.")
         return
 
-    watcher = AlphaWatcher(args.rpc, wallets)
+    print(f"Convergence detector: {args.convergence_min}+ wallets / "
+          f"{args.convergence_window//60}min window")
+    watcher = AlphaWatcher(
+        args.rpc, wallets,
+        convergence_window=args.convergence_window,
+        convergence_min_wallets=args.convergence_min,
+    )
     watcher.run(poll_interval=args.poll)
 
 
