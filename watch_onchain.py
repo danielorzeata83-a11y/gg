@@ -162,9 +162,11 @@ class AlphaWatcher:
         self.on_signal(signal)
 
     def run(self, poll_interval=2.0, from_block="latest"):
-        if not self.w3.is_connected():
-            raise ConnectionError("Could not connect to Polygon RPC. Check your RPC_URL.")
-        chain_id = self.w3.eth.chain_id
+        # is_connected() is unreliable with HTTPProvider in web3 v6+; test with a real call
+        try:
+            chain_id = self.w3.eth.chain_id
+        except Exception as e:
+            raise ConnectionError(f"Could not connect to Polygon RPC: {e}")
         if chain_id != 137:
             print(f"  WARNING: connected to chain {chain_id}, expected Polygon (137)")
 
