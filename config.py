@@ -20,6 +20,15 @@ class Config:
     max_total_exposure_usdc: float = 200.0
     max_daily_loss_usdc: float = 50.0
 
+    # ---- Liquidity gates ---------------------------------------------------
+    # Reject markets whose bid-ask spread is wider than this (illiquid -> hidden cost).
+    max_spread: float = 0.05
+    # Never consume more than this fraction of the book's available depth on our side
+    # (leaves a cushion so our own order doesn't move the price against us).
+    depth_safety_fraction: float = 0.50
+    # If depth-constrained size falls below this floor, skip the trade entirely.
+    min_position_usdc: float = 5.0
+
     # ---- Timing ------------------------------------------------------------
     cooldown_seconds: float = 300.0     # per (wallet, market) pair
     order_timeout_seconds: float = 30.0
@@ -58,6 +67,9 @@ def load_config() -> Config:
         "POSITION_FRACTION": ("position_fraction", float),
         "MAX_POSITION_USDC": ("max_position_usdc", float),
         "MAX_SLIPPAGE": ("max_slippage", float),
+        "MAX_SPREAD": ("max_spread", float),
+        "DEPTH_SAFETY_FRACTION": ("depth_safety_fraction", float),
+        "MIN_POSITION_USDC": ("min_position_usdc", float),
         "MAX_OPEN_POSITIONS": ("max_open_positions", int),
         "MAX_TOTAL_EXPOSURE_USDC": ("max_total_exposure_usdc", float),
         "MAX_DAILY_LOSS_USDC": ("max_daily_loss_usdc", float),

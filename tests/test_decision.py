@@ -122,6 +122,61 @@ def test_daily_loss_gate(mock_tick, mock_book, tmp_path, engine):
 
 @patch("decision.get_order_book")
 @patch("decision.get_tick_size")
+def test_wide_spread_rejected(mock_tick, mock_book, engine):
+    eng, cfg, _ = engine
+    cfg.max_spread = 0.05
+    # ask 0.61, bid 0.50 -> spread 0.11 > 0.05
+    book = {
+        "asks": [{"price": "0.61", "size": "1000"}],
+        "bids": [{"price": "0.50", "size": "1000"}],
+    }
+    mock_book.return_value = book
+    mock_tick.return_value = 0.01
+    d = eng.evaluate(make_signal(price=0.60))
+    assert not d.approved
+    assert "spread" in d.reason
+    assert d.spread == pytest.approx(0.11)
+
+
+@patch("decision.get_order_book")
+@patch("decision.get_tick_size")
+def test_depth_aware_sizing_caps_position(mock_tick, mock_book, engine):
+    eng, cfg, _ = engine
+    cfg.depth_safety_fraction = 0.5
+    cfg.min_position_usdc = 5.0
+    # Book has ~$12.2 depth (20 tokens * 0.61). Desired 2% of 1000 = $20.
+    # depth_safety 0.5 * 12.2 = $6.1 -> position capped to $6.1 (>= floor 5).
+    book = {
+        "asks": [{"price": "0.61", "size": "20"}],
+        "bids": [{"price": "0.60", "size": "20"}],
+    }
+    mock_book.return_value = book
+    mock_tick.return_value = 0.01
+    d = eng.evaluate(make_signal(price=0.60))
+    assert d.approved, d.reason
+    assert d.size_usdc == pytest.approx(0.5 * 20 * 0.61)  # 6.1
+    assert d.size_usdc < 20.0  # capped below desired
+
+
+@patch("decision.get_order_book")
+@patch("decision.get_tick_size")
+def test_thin_book_below_floor_rejected(mock_tick, mock_book, engine):
+    eng, cfg, _ = engine
+    cfg.min_position_usdc = 5.0
+    # Only 5 tokens * 0.61 = $3.05 depth; 0.5 fraction -> $1.5 < floor 5 -> reject
+    book = {
+        "asks": [{"price": "0.61", "size": "5"}],
+        "bids": [{"price": "0.60", "size": "5"}],
+    }
+    mock_book.return_value = book
+    mock_tick.return_value = 0.01
+    d = eng.evaluate(make_signal(price=0.60))
+    assert not d.approved
+    assert "liquidity" in d.reason
+
+
+@patch("decision.get_order_book")
+@patch("decision.get_tick_size")
 def test_no_bankroll_rejected(mock_tick, mock_book, engine):
     eng, cfg, _ = engine
     cfg.bankroll_usdc = 0.0

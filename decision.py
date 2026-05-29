@@ -49,6 +49,31 @@ def get_tick_size(token_id: str) -> float:
     return 0.01
 
 
+def best_bid_ask(book: dict) -> tuple:
+    """Return (best_bid, best_ask) from the book, or (None, None) if missing.
+
+    Order-independent: best ask is the lowest ask price, best bid the highest bid.
+    """
+    asks = book.get("asks", [])
+    bids = book.get("bids", [])
+    best_ask = min((float(l.get("price", 0)) for l in asks if float(l.get("size", 0)) > 0),
+                   default=None)
+    best_bid = max((float(l.get("price", 0)) for l in bids if float(l.get("size", 0)) > 0),
+                   default=None)
+    return best_bid, best_ask
+
+
+def available_depth_usdc(book: dict, side: str) -> float:
+    """Total USDC available on the side we'd trade into.
+
+    BUY consumes asks, SELL consumes bids. Used to size positions so we don't
+    eat more than a safe fraction of the book (which would move price against us).
+    """
+    levels_key = "asks" if side == "BUY" else "bids"
+    levels = book.get(levels_key, [])
+    return sum(float(l.get("price", 0)) * float(l.get("size", 0)) for l in levels)
+
+
 def walk_book_for_fill(book: dict, side: str, size_usdc: float) -> Optional[float]:
     """Walk the order book to compute average fill price for size_usdc of spend.
 
@@ -94,6 +119,7 @@ class TradeDecision:
     slippage: float = 0.0
     tick_size: float = 0.01
     speed_score: float = 1.0  # 0..1 pipeline latency quality (1.0 = unknown/fast)
+    spread: float = 0.0       # best_ask - best_bid at decision time
 
 
 class DecisionEngine:
@@ -141,12 +167,38 @@ class DecisionEngine:
 
         tick_size = get_tick_size(token_id)
 
+        # ---- 1b. Spread gate (liquidity) ----------------------------------
+        # A wide bid-ask spread signals an illiquid market: even if our slippage
+        # looks ok against the alpha price, the round-trip cost is high.
+        best_bid, best_ask = best_bid_ask(book)
+        spread = 0.0
+        if best_bid is not None and best_ask is not None:
+            spread = best_ask - best_bid
+            if spread > self.cfg.max_spread:
+                return TradeDecision(False,
+                                     f"spread {spread:.4f} > max {self.cfg.max_spread}",
+                                     token_id, side, alpha_price=alpha_price,
+                                     tick_size=tick_size, spread=spread)
+
         # ---- 2. Edge check ------------------------------------------------
-        size_usdc = self._compute_size()
+        # Depth-aware sizing: cap our spend at a safe fraction of the book so our
+        # own order doesn't walk the price against us. If the depth-constrained
+        # size falls below the floor, the market is too thin — skip.
+        desired_size = self._compute_size()
+        depth = available_depth_usdc(book, side)
+        size_usdc = min(desired_size, self.cfg.depth_safety_fraction * depth)
+        if size_usdc < self.cfg.min_position_usdc:
+            return TradeDecision(False,
+                                 f"insufficient liquidity: depth ${depth:.2f} "
+                                 f"caps size to ${size_usdc:.2f} < floor "
+                                 f"${self.cfg.min_position_usdc:.2f}",
+                                 token_id, side, alpha_price=alpha_price,
+                                 tick_size=tick_size, spread=spread)
+
         avg_fill = walk_book_for_fill(book, side, size_usdc)
         if avg_fill is None:
             return TradeDecision(False, "insufficient liquidity in book", token_id, side,
-                                 alpha_price=alpha_price, tick_size=tick_size)
+                                 alpha_price=alpha_price, tick_size=tick_size, spread=spread)
 
         if side == "BUY":
             slippage = avg_fill - alpha_price
@@ -158,7 +210,7 @@ class DecisionEngine:
                                  f"slippage {slippage:.4f} > max {effective_max_slippage:.4f}"
                                  f" (speed_score={speed_score:.2f})",
                                  token_id, side, avg_fill, size_usdc, alpha_price,
-                                 slippage, tick_size, speed_score)
+                                 slippage, tick_size, speed_score, spread)
 
         # ---- 3. Cooldown check --------------------------------------------
         ck = (actor, token_id)
@@ -167,7 +219,7 @@ class DecisionEngine:
             return TradeDecision(False,
                                  f"cooldown active (last trade {time.time()-last:.0f}s ago)",
                                  token_id, side, avg_fill, size_usdc, alpha_price,
-                                 slippage, tick_size)
+                                 slippage, tick_size, speed_score, spread)
 
         # ---- 4. Risk gates ------------------------------------------------
         daily_loss = self.ledger.daily_loss()
@@ -175,27 +227,27 @@ class DecisionEngine:
             return TradeDecision(False,
                                  f"daily loss ${daily_loss:.2f} >= limit ${self.cfg.max_daily_loss_usdc:.2f}",
                                  token_id, side, avg_fill, size_usdc, alpha_price,
-                                 slippage, tick_size)
+                                 slippage, tick_size, speed_score, spread)
 
         exposure = self.ledger.open_exposure()
         if exposure + size_usdc > self.cfg.max_total_exposure_usdc:
             return TradeDecision(False,
                                  f"exposure ${exposure+size_usdc:.2f} would exceed max ${self.cfg.max_total_exposure_usdc:.2f}",
                                  token_id, side, avg_fill, size_usdc, alpha_price,
-                                 slippage, tick_size)
+                                 slippage, tick_size, speed_score, spread)
 
         open_pos = self.ledger.open_position_count()
         if open_pos >= self.cfg.max_open_positions:
             return TradeDecision(False,
                                  f"open positions {open_pos} >= max {self.cfg.max_open_positions}",
                                  token_id, side, avg_fill, size_usdc, alpha_price,
-                                 slippage, tick_size)
+                                 slippage, tick_size, speed_score, spread)
 
         # ---- 5. Approved --------------------------------------------------
         self._cooldowns[ck] = time.time()
         return TradeDecision(True, "all checks passed", token_id, side,
                              avg_fill, size_usdc, alpha_price, slippage, tick_size,
-                             speed_score)
+                             speed_score, spread)
 
     def _compute_size(self) -> float:
         """Fixed fraction of bankroll, capped by max_position_usdc."""
