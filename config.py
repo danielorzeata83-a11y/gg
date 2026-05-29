@@ -27,6 +27,13 @@ class Config:
     # ---- Paper-trading gate ------------------------------------------------
     min_paper_trades: int = 30
 
+    # ---- Execution speed ---------------------------------------------------
+    # monitoring_mode: "ws_subscribe" (fastest) or "polling" (fallback)
+    # SpeedMetrics tighten slippage automatically — no manual tuning needed.
+    monitoring_mode: str = "ws_subscribe"
+    # If pipeline avg latency exceeds this threshold (ms), warn in logs.
+    slow_pipeline_warn_ms: float = 2000.0
+
     # ---- Fees --------------------------------------------------------------
     # Polymarket charges 2% on winning positions (taker fee).
     # We model a conservative 2% round-trip assumption for paper simulation.
@@ -62,6 +69,8 @@ def load_config() -> Config:
         "LEDGER_PATH": ("ledger_path", str),
         "LOG_PATH": ("log_path", str),
         "POLYGONSCAN_API_KEY": ("polygonscan_api_key", str),
+        "MONITORING_MODE": ("monitoring_mode", str),
+        "SLOW_PIPELINE_WARN_MS": ("slow_pipeline_warn_ms", float),
     }
     for env_key, (attr, cast) in env_map.items():
         val = os.getenv(env_key)

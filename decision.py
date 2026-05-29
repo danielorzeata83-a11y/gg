@@ -93,6 +93,7 @@ class TradeDecision:
     alpha_price: float = 0.0
     slippage: float = 0.0
     tick_size: float = 0.01
+    speed_score: float = 1.0  # 0..1 pipeline latency quality (1.0 = unknown/fast)
 
 
 class DecisionEngine:
@@ -106,11 +107,26 @@ class DecisionEngine:
         """
         Given an on-chain signal, decide whether to copy the trade.
         Returns TradeDecision with approved=True only when all gates pass.
+
+        SpeedMetrics gate: if our pipeline latency is poor (score < 0.4 = >3000ms avg)
+        we tighten the slippage tolerance by 50% — because a slow pipeline means the
+        market has likely already moved by the time our order lands.
+        SpeedMetrics is intentionally separate from alpha_score (which measures wallet
+        skill) — a great wallet with slow detection is still worth copying, just with
+        tighter execution constraints.
         """
         token_id = signal.get("outcomeAssetId", "")
         side = signal.get("side", "")
         alpha_price = signal.get("price", 0.0)
         actor = signal.get("actor", "")
+        speed_score = signal.get("speed_score", 1.0)
+
+        # Tighten slippage tolerance when our pipeline is demonstrably slow
+        effective_max_slippage = self.cfg.max_slippage
+        if speed_score < 0.4:
+            effective_max_slippage *= 0.5  # pipeline >3s avg: halve tolerance
+        elif speed_score < 0.7:
+            effective_max_slippage *= 0.75  # pipeline 1.5-3s: 25% tighter
 
         # ---- 0. Bankroll check (fast fail before any network call) ----------
         if self.cfg.bankroll_usdc <= 0:
@@ -137,11 +153,12 @@ class DecisionEngine:
         else:
             slippage = alpha_price - avg_fill  # for SELL we want higher price
 
-        if slippage > self.cfg.max_slippage:
+        if slippage > effective_max_slippage:
             return TradeDecision(False,
-                                 f"slippage {slippage:.4f} > max {self.cfg.max_slippage}",
+                                 f"slippage {slippage:.4f} > max {effective_max_slippage:.4f}"
+                                 f" (speed_score={speed_score:.2f})",
                                  token_id, side, avg_fill, size_usdc, alpha_price,
-                                 slippage, tick_size)
+                                 slippage, tick_size, speed_score)
 
         # ---- 3. Cooldown check --------------------------------------------
         ck = (actor, token_id)
@@ -177,7 +194,8 @@ class DecisionEngine:
         # ---- 5. Approved --------------------------------------------------
         self._cooldowns[ck] = time.time()
         return TradeDecision(True, "all checks passed", token_id, side,
-                             avg_fill, size_usdc, alpha_price, slippage, tick_size)
+                             avg_fill, size_usdc, alpha_price, slippage, tick_size,
+                             speed_score)
 
     def _compute_size(self) -> float:
         """Fixed fraction of bankroll, capped by max_position_usdc."""

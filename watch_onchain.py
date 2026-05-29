@@ -12,6 +12,11 @@ Why on-chain beats polling / CLOB websocket:
   - CLOB websocket shows orderbook moves but isn't cleanly tied to a wallet address.
   - Raw contract logs arrive at block time (~2s on Polygon), tied directly to maker/taker.
 
+Transport modes (in order of latency):
+  1. eth_subscribe('logs') over WebSocket — fires at block-time (~2s), RECOMMENDED.
+     Falls through automatically to mode 2 if WebSocket is unavailable.
+  2. eth_getLogs polling — portable fallback; adds one poll-interval of lag.
+
 Event (from Polymarket/ctf-exchange Trading.sol):
   OrderFilled(bytes32 orderHash, address maker, address taker,
               uint256 makerAssetId, uint256 takerAssetId,
@@ -36,6 +41,7 @@ A Polygon RPC WebSocket endpoint (Alchemy/Infura/QuickNode/your own node).
 import json
 import time
 import argparse
+import threading
 from web3 import Web3
 
 # ---- Constants -------------------------------------------------------------
@@ -112,10 +118,58 @@ def decode_order_filled(log):
     }
 
 
+# ---- Speed Metrics ---------------------------------------------------------
+
+class SpeedMetrics:
+    """Tracks per-wallet execution latency (detected_at vs block timestamp).
+    Used in decision layer as execution quality gate — NOT mixed into alpha_score.
+    """
+
+    def __init__(self):
+        self._latencies: dict[str, list[float]] = {}  # wallet -> [ms, ...]
+
+    def record(self, wallet: str, detected_at: float, block_ts: float):
+        """Record latency in ms for a fill: time from block mining to our detection."""
+        lag_ms = max(0.0, (detected_at - block_ts) * 1000)
+        bucket = self._latencies.setdefault(wallet, [])
+        bucket.append(lag_ms)
+        if len(bucket) > 200:
+            bucket.pop(0)
+
+    def execution_latency_score(self, avg_latency_ms: float) -> float:
+        """
+        Score our pipeline speed: <500ms excellent, >3000ms poor.
+        Used to decide if we can still copy without excess slippage.
+        """
+        if avg_latency_ms < 500:
+            return 1.0
+        elif avg_latency_ms < 1500:
+            return 0.7
+        elif avg_latency_ms < 3000:
+            return 0.4
+        else:
+            return 0.1
+
+    def wallet_stats(self, wallet: str) -> dict:
+        lats = self._latencies.get(wallet, [])
+        if not lats:
+            return {"avg_latency_ms": 0.0, "speed_score": 1.0, "sample_count": 0}
+        avg = sum(lats) / len(lats)
+        return {
+            "avg_latency_ms": round(avg, 1),
+            "speed_score": self.execution_latency_score(avg),
+            "sample_count": len(lats),
+        }
+
+    def all_stats(self) -> dict:
+        return {w: self.wallet_stats(w) for w in self._latencies}
+
+
 # ---- Watcher ---------------------------------------------------------------
 
 class AlphaWatcher:
     def __init__(self, rpc_url, watched_wallets, on_signal=None):
+        self.rpc_url = rpc_url
         self.w3 = Web3(Web3.LegacyWebSocketProvider(rpc_url)
                        if rpc_url.startswith("ws")
                        else Web3.HTTPProvider(rpc_url))
@@ -123,14 +177,19 @@ class AlphaWatcher:
         self.watched = {Web3.to_checksum_address(w) for w in watched_wallets}
         self.on_signal = on_signal or self._default_handler
         self._seen = set()  # (txHash, orderHash) dedupe keys
+        self.speed = SpeedMetrics()
 
     def _default_handler(self, sig):
         ts = time.strftime("%H:%M:%S")
+        spd = sig.get("speed_score", 1.0)
+        spd_str = f"⚡{spd:.2f}" if spd >= 0.7 else f"🐢{spd:.2f}"
         print(f"[{ts}] ALPHA {sig['actor_role']} {sig['actor'][:10]}... "
               f"{sig['side']:<4} ${sig['usdc']:>10,.2f} @ {sig['price']:.3f} "
-              f"asset={sig['outcomeAssetId'][:16]}... tx={sig['txHash'][:12]}...")
+              f"{spd_str} lag={sig.get('detection_lag_ms',0):.0f}ms "
+              f"tx={sig['txHash'][:12]}...")
 
     def _handle_log(self, log):
+        detected_at = time.time()
         try:
             ev = decode_order_filled(log)
         except Exception as e:
@@ -157,32 +216,62 @@ class AlphaWatcher:
         if len(self._seen) > 50000:
             self._seen = set(list(self._seen)[-10000:])
 
-        signal = {**ev, "actor": actor, "actor_role": hit_role,
-                  "detected_at": time.time()}
+        # Record latency: compare detection time vs block timestamp
+        try:
+            blk = self.w3.eth.get_block(ev["block"])
+            block_ts = blk.get("timestamp", detected_at)
+        except Exception:
+            block_ts = detected_at
+        self.speed.record(actor, detected_at, block_ts)
+        stats = self.speed.wallet_stats(actor)
+
+        signal = {
+            **ev,
+            "actor": actor,
+            "actor_role": hit_role,
+            "detected_at": detected_at,
+            "detection_lag_ms": round((detected_at - block_ts) * 1000, 1),
+            "speed_score": stats["speed_score"],
+        }
         self.on_signal(signal)
 
-    def run(self, poll_interval=2.0, from_block="latest"):
-        # is_connected() is unreliable with HTTPProvider in web3 v6+; test with a real call
+    # ---- WebSocket subscription (fast path) --------------------------------
+
+    def _run_ws_subscription(self):
+        """
+        eth_subscribe('logs') via WebSocket — fires at block finalization (~2s on Polygon).
+        ~2-5s faster than polling because we don't add the poll interval on top.
+        Returns False if subscription fails so caller can fall back to polling.
+        """
+        if not self.rpc_url.startswith("ws"):
+            return False
+
         try:
-            chain_id = self.w3.eth.chain_id
+            sub_filter = {
+                "address": [CTF_EXCHANGE, NEG_RISK_CTF_EXCHANGE],
+                "topics": [ORDER_FILLED_TOPIC],
+            }
+            subscription_id = self.w3.eth.subscribe("logs", sub_filter)
+            print(f"  WebSocket subscription active (id={subscription_id})")
+
+            for event in self.w3.eth.get_filter_changes(subscription_id):
+                self._handle_log(event)
         except Exception as e:
-            raise ConnectionError(f"Could not connect to Polygon RPC: {e}")
-        if chain_id != 137:
-            print(f"  WARNING: connected to chain {chain_id}, expected Polygon (137)")
+            print(f"  WebSocket subscription error: {e} — falling back to polling")
+            return False
+        return True
 
-        print(f"Watching {len(self.watched)} wallets across "
-              f"{len(EXCHANGE_ADDRS)} exchange contracts.")
-        print(f"OrderFilled topic: {ORDER_FILLED_TOPIC}")
-        print("Listening for fills... (Ctrl-C to stop)\n")
+    # ---- HTTP polling (fallback) -------------------------------------------
 
-        # Poll-based log filter: portable across providers (eth_getLogs).
-        # For lowest latency, swap to eth_subscribe('logs', ...) on a ws provider.
+    def _run_polling(self, poll_interval=2.0, from_block="latest"):
+        """eth_getLogs polling — portable, works on any provider."""
         last_block = (self.w3.eth.block_number if from_block == "latest"
                       else int(from_block))
         flt = {
             "address": list(EXCHANGE_ADDRS),
             "topics": [ORDER_FILLED_TOPIC],
         }
+        print(f"  Using polling fallback (interval={poll_interval}s)")
         while True:
             try:
                 head = self.w3.eth.block_number
@@ -197,6 +286,31 @@ class AlphaWatcher:
                 time.sleep(poll_interval * 2)
             time.sleep(poll_interval)
 
+    # ---- Entry point -------------------------------------------------------
+
+    def run(self, poll_interval=2.0, from_block="latest"):
+        try:
+            chain_id = self.w3.eth.chain_id
+        except Exception as e:
+            raise ConnectionError(f"Could not connect to Polygon RPC: {e}")
+        if chain_id != 137:
+            print(f"  WARNING: connected to chain {chain_id}, expected Polygon (137)")
+
+        print(f"Watching {len(self.watched)} wallets across "
+              f"{len(EXCHANGE_ADDRS)} exchange contracts.")
+        print(f"OrderFilled topic: {ORDER_FILLED_TOPIC}")
+
+        # Try WebSocket subscription first; fall back to polling if unavailable.
+        if self.rpc_url.startswith("ws"):
+            print("Attempting WebSocket log subscription (faster)...")
+            success = self._run_ws_subscription()
+            if success:
+                return
+            # subscription returned False — fall through to polling
+
+        print("Listening for fills via polling... (Ctrl-C to stop)\n")
+        self._run_polling(poll_interval, from_block)
+
 
 def load_watchlist(path):
     with open(path) as f:
@@ -210,11 +324,11 @@ def load_watchlist(path):
 def main():
     ap = argparse.ArgumentParser(description="Watch alpha wallets on-chain (Polygon)")
     ap.add_argument("--rpc", required=True,
-                    help="Polygon RPC URL (wss://... preferred, or https://...)")
+                    help="Polygon RPC URL (wss://... preferred for lowest latency)")
     ap.add_argument("--watchlist", default="alpha_wallets.json",
                     help="JSON from discover_alpha.py, or a JSON list of addresses")
     ap.add_argument("--poll", type=float, default=2.0,
-                    help="Seconds between log polls (ignore if using subscription)")
+                    help="Seconds between log polls (used only if WebSocket unavailable)")
     args = ap.parse_args()
 
     wallets = load_watchlist(args.watchlist)
