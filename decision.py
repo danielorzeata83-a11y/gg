@@ -123,9 +123,12 @@ class TradeDecision:
 
 
 class DecisionEngine:
-    def __init__(self, cfg: Config, ledger: Ledger):
+    def __init__(self, cfg: Config, ledger: Ledger, market_meta=None):
         self.cfg = cfg
         self.ledger = ledger
+        # Optional GammaCache-like provider with .lookup(token_id) -> MarketMeta.
+        # When None, market-metadata gates are silently skipped (no behavior change).
+        self.market_meta = market_meta
         # cooldown tracker: (wallet, token_id) -> last trade timestamp
         self._cooldowns: dict[tuple, float] = {}
 
@@ -179,6 +182,28 @@ class DecisionEngine:
                                      f"spread {spread:.4f} > max {self.cfg.max_spread}",
                                      token_id, side, alpha_price=alpha_price,
                                      tick_size=tick_size, spread=spread)
+
+        # ---- 1c. Market-metadata gates (Gamma) ----------------------------
+        # Only enforced when a metadata provider is attached AND the token is
+        # found. Cache miss or no provider -> skip silently (graceful degrade).
+        if self.market_meta is not None:
+            meta = self.market_meta.lookup(token_id)
+            if meta is not None:
+                if self.cfg.min_market_liquidity > 0 and \
+                        meta.liquidity < self.cfg.min_market_liquidity:
+                    return TradeDecision(False,
+                                         f"market liquidity ${meta.liquidity:.0f} < min "
+                                         f"${self.cfg.min_market_liquidity:.0f}",
+                                         token_id, side, alpha_price=alpha_price,
+                                         tick_size=tick_size, spread=spread)
+                if self.cfg.min_hours_to_resolution > 0:
+                    hrs = meta.hours_to_resolution()
+                    if hrs is not None and hrs < self.cfg.min_hours_to_resolution:
+                        return TradeDecision(False,
+                                             f"resolves in {hrs:.1f}h < min "
+                                             f"{self.cfg.min_hours_to_resolution:.1f}h",
+                                             token_id, side, alpha_price=alpha_price,
+                                             tick_size=tick_size, spread=spread)
 
         # ---- 2. Edge check ------------------------------------------------
         # Depth-aware sizing: cap our spend at a safe fraction of the book so our

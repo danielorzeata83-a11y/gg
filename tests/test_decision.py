@@ -175,6 +175,75 @@ def test_thin_book_below_floor_rejected(mock_tick, mock_book, engine):
     assert "liquidity" in d.reason
 
 
+class _FakeMeta:
+    """Stand-in for gamma_api.MarketMeta in decision tests."""
+    def __init__(self, liquidity=10000.0, hours=None):
+        self.liquidity = liquidity
+        self._hours = hours
+
+    def hours_to_resolution(self, now=None):
+        return self._hours
+
+
+class _FakeCache:
+    def __init__(self, meta):
+        self._meta = meta
+
+    def lookup(self, token_id):
+        return self._meta
+
+
+@patch("decision.get_order_book")
+@patch("decision.get_tick_size")
+def test_metadata_gate_skipped_when_no_provider(mock_tick, mock_book, engine):
+    eng, cfg, _ = engine
+    cfg.min_market_liquidity = 999999.0  # would reject if enforced
+    mock_book.return_value = make_book(ask_price=0.61)
+    mock_tick.return_value = 0.01
+    d = eng.evaluate(make_signal(price=0.60))
+    # No market_meta attached -> gate skipped -> still approved
+    assert d.approved, d.reason
+
+
+@patch("decision.get_order_book")
+@patch("decision.get_tick_size")
+def test_low_market_liquidity_rejected(mock_tick, mock_book, tmp_path):
+    cfg = Config(bankroll_usdc=1000.0, max_slippage=0.02, min_market_liquidity=5000.0)
+    ledger = Ledger(str(tmp_path / "l.jsonl"))
+    eng = DecisionEngine(cfg, ledger, market_meta=_FakeCache(_FakeMeta(liquidity=100.0)))
+    mock_book.return_value = make_book(ask_price=0.61)
+    mock_tick.return_value = 0.01
+    d = eng.evaluate(make_signal(price=0.60))
+    assert not d.approved
+    assert "market liquidity" in d.reason
+
+
+@patch("decision.get_order_book")
+@patch("decision.get_tick_size")
+def test_near_resolution_rejected(mock_tick, mock_book, tmp_path):
+    cfg = Config(bankroll_usdc=1000.0, max_slippage=0.02, min_hours_to_resolution=6.0)
+    ledger = Ledger(str(tmp_path / "l.jsonl"))
+    eng = DecisionEngine(cfg, ledger, market_meta=_FakeCache(_FakeMeta(hours=2.0)))
+    mock_book.return_value = make_book(ask_price=0.61)
+    mock_tick.return_value = 0.01
+    d = eng.evaluate(make_signal(price=0.60))
+    assert not d.approved
+    assert "resolves in" in d.reason
+
+
+@patch("decision.get_order_book")
+@patch("decision.get_tick_size")
+def test_metadata_cache_miss_is_graceful(mock_tick, mock_book, tmp_path):
+    cfg = Config(bankroll_usdc=1000.0, max_slippage=0.02, min_market_liquidity=5000.0)
+    ledger = Ledger(str(tmp_path / "l.jsonl"))
+    # Cache returns None (token not in index) -> gate skipped -> approved
+    eng = DecisionEngine(cfg, ledger, market_meta=_FakeCache(None))
+    mock_book.return_value = make_book(ask_price=0.61)
+    mock_tick.return_value = 0.01
+    d = eng.evaluate(make_signal(price=0.60))
+    assert d.approved, d.reason
+
+
 @patch("decision.get_order_book")
 @patch("decision.get_tick_size")
 def test_no_bankroll_rejected(mock_tick, mock_book, engine):

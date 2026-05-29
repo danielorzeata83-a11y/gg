@@ -29,6 +29,13 @@ class Config:
     # If depth-constrained size falls below this floor, skip the trade entirely.
     min_position_usdc: float = 5.0
 
+    # ---- Market-metadata gates (require a Gamma cache; skipped if absent) ---
+    # Reject trades on markets resolving within this many hours (thin/volatile).
+    # 0 disables the gate.
+    min_hours_to_resolution: float = 0.0
+    # Reject markets whose Gamma liquidity is below this (USDC). 0 disables.
+    min_market_liquidity: float = 0.0
+
     # ---- Timing ------------------------------------------------------------
     cooldown_seconds: float = 300.0     # per (wallet, market) pair
     order_timeout_seconds: float = 30.0
@@ -70,6 +77,8 @@ def load_config() -> Config:
         "MAX_SPREAD": ("max_spread", float),
         "DEPTH_SAFETY_FRACTION": ("depth_safety_fraction", float),
         "MIN_POSITION_USDC": ("min_position_usdc", float),
+        "MIN_HOURS_TO_RESOLUTION": ("min_hours_to_resolution", float),
+        "MIN_MARKET_LIQUIDITY": ("min_market_liquidity", float),
         "MAX_OPEN_POSITIONS": ("max_open_positions", int),
         "MAX_TOTAL_EXPOSURE_USDC": ("max_total_exposure_usdc", float),
         "MAX_DAILY_LOSS_USDC": ("max_daily_loss_usdc", float),
