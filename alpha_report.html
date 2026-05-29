@@ -131,6 +131,8 @@
   .cg-edge { color: var(--purple) !important; }
   .cg-activity { color: var(--cyan) !important; }
   .cg-risk { color: var(--orange) !important; }
+  .cg-radj { color: var(--yellow) !important; }
+  .cg-verify { color: var(--red) !important; }
 
   thead tr.col-headers th {
     background: var(--bg2); padding: 8px 10px; text-align: left;
@@ -385,6 +387,8 @@
       <th colspan="2" class="cg-edge sep-col">🎯 Edge</th>
       <th colspan="4" class="cg-activity sep-col">🔄 Activity</th>
       <th colspan="3" class="cg-risk sep-col">🛡️ Risk</th>
+      <th colspan="4" class="cg-radj sep-col">📐 Risk-Adjusted</th>
+      <th colspan="3" class="cg-verify sep-col">🔗 Verification</th>
     </tr>
     <tr class="col-headers">
       <!-- Identity -->
@@ -410,6 +414,15 @@
       <th data-col="diversification" class="sep-col" data-tip="unique_markets / total_positions.&#10;1.0 = each position is a unique market (max diversified)">Diversif.</th>
       <th data-col="max_position_pct" data-tip="Max single market cost / total capital.&#10;> 30% = concentrated risk">Max Pos%</th>
       <th data-col="yes_bias" data-tip="(YES trades – NO trades) / total.&#10;+1 = always YES · -1 = always NO · 0 = balanced">YES Bias</th>
+      <!-- Risk-Adjusted -->
+      <th data-col="brier_score" class="sep-col" data-tip="Mean (entry_price – outcome)². Probabilistic accuracy.&#10;LOWER is better! Green < 0.2 · Yellow 0.2–0.3 · Red > 0.3">Brier</th>
+      <th data-col="sortino_ratio" data-tip="Mean per-market ROI / downside deviation.&#10;Rewards return without punishing upside volatility.&#10;Green > 2 · Yellow 0–2 · Red < 0">Sortino</th>
+      <th data-col="calmar_ratio" data-tip="Annualized ROI / max drawdown.&#10;Return per unit of worst-case loss.&#10;Green > 1 · Yellow 0–1 · Red < 0">Calmar</th>
+      <th data-col="capital_turnover" data-tip="Total volume / total cost basis. How hard capital is recycled.">Turnover</th>
+      <!-- Verification -->
+      <th data-col="onchain_age_days" class="sep-col" data-tip="True wallet age from Polygonscan (days).&#10;Requires POLYGONSCAN_API_KEY · 0 if unavailable">Wallet Age</th>
+      <th data-col="sybil_risk" data-tip="Pool-level Jaccard overlap of traded markets with another wallet.&#10;High = possible coordinated/wash farm.&#10;Green < 0.3 · Yellow 0.3–0.6 · Red > 0.6">Sybil Risk</th>
+      <th data-col="revenge_flag" data-tip="🚩 if a 2×+ position-size spike was detected right after a loss (revenge trading).">Revenge</th>
     </tr>
   </thead>
   <tbody id="tbody"></tbody>
@@ -599,7 +612,7 @@ function render() {
   const tbody = document.getElementById('tbody');
 
   if (!rows.length) {
-    tbody.innerHTML = '<tr><td colspan="17" class="empty">No wallets match the current filters.</td></tr>';
+    tbody.innerHTML = '<tr><td colspan="24" class="empty">No wallets match the current filters.</td></tr>';
     return;
   }
 
@@ -637,6 +650,17 @@ function render() {
     const pnlClass = (w.realized_pnl||0) >= 0 ? 'cell-pos' : 'cell-neg';
     const pnlSign = (w.realized_pnl||0) >= 0 ? '+' : '';
 
+    // Brier (LOWER is better!): only color when a value exists
+    const brier = w.brier_score || 0;
+    const brierClass = brier <= 0 ? 'cell-neutral' : brier < 0.2 ? 'cell-green' : brier <= 0.3 ? 'cell-yellow' : 'cell-red';
+    // Sortino
+    const sortinoClass = (w.sortino_ratio||0) > 2 ? 'cell-green' : (w.sortino_ratio||0) >= 0 ? 'cell-yellow' : 'cell-red';
+    // Calmar
+    const calmarClass = (w.calmar_ratio||0) > 1 ? 'cell-green' : (w.calmar_ratio||0) >= 0 ? 'cell-yellow' : 'cell-red';
+    // Sybil risk
+    const sybil = w.sybil_risk || 0;
+    const sybilClass = sybil < 0.3 ? 'cell-green' : sybil <= 0.6 ? 'cell-yellow' : 'cell-red';
+
     return `<tr class="${excluded ? 'excluded-row' : ''}" data-wallet="${w.proxyWallet}">
       <td style="color:var(--text3);font-size:12px;font-weight:600">${i+1}</td>
       <td>
@@ -670,6 +694,13 @@ function render() {
       <td class="sep-col" style="color:var(--text2)">${w.diversification!=null ? w.diversification.toFixed(3) : '—'}</td>
       <td style="color:var(--text2)">${w.max_position_pct!=null ? pct(w.max_position_pct) : '—'}</td>
       <td class="${ybClass}">${ybStr}</td>
+      <td class="sep-col ${brierClass}">${brier > 0 ? brier.toFixed(3) : '—'}</td>
+      <td class="${sortinoClass}">${(w.sortino_ratio||0).toFixed(2)}</td>
+      <td class="${calmarClass}">${(w.calmar_ratio||0).toFixed(2)}</td>
+      <td style="color:var(--text2)">${(w.capital_turnover||0).toFixed(2)}</td>
+      <td class="sep-col" style="color:var(--text2)">${(w.onchain_age_days||0) > 0 ? Math.round(w.onchain_age_days)+'d' : '—'}</td>
+      <td class="${sybilClass}">${sybil.toFixed(2)}</td>
+      <td style="text-align:center">${w.revenge_flag ? '🚩' : '<span style="color:var(--text3)">—</span>'}</td>
     </tr>`;
   }).join('');
 
@@ -754,6 +785,26 @@ function openPanel(walletAddr) {
         { label: 'Avg Entry Timing', value: (w.avg_entry_timing_days||0).toFixed(1)+'d', cls: '' },
       ]
     },
+    {
+      title: '📐 Risk-Adjusted',
+      metrics: [
+        { label: 'Brier Score', value: (w.brier_score||0) > 0 ? (w.brier_score||0).toFixed(4) : '—', cls: (w.brier_score||0)<=0?'':(w.brier_score||0)<0.2?'green':(w.brier_score||0)<=0.3?'yellow':'red' },
+        { label: 'Sortino Ratio', value: (w.sortino_ratio||0).toFixed(3), cls: (w.sortino_ratio||0)>2?'green':(w.sortino_ratio||0)>=0?'yellow':'red' },
+        { label: 'Calmar Ratio', value: (w.calmar_ratio||0).toFixed(3), cls: (w.calmar_ratio||0)>1?'green':(w.calmar_ratio||0)>=0?'yellow':'red' },
+        { label: 'Capital Turnover', value: (w.capital_turnover||0).toFixed(3), cls: '' },
+        { label: 'Slippage Proxy', value: (w.slippage_proxy||0).toFixed(3), cls: '' },
+      ]
+    },
+    {
+      title: '🔗 Verification & Red Flags',
+      metrics: [
+        { label: 'Wallet Age (on-chain)', value: (w.onchain_age_days||0) > 0 ? Math.round(w.onchain_age_days)+' days' : '—', cls: '' },
+        { label: 'On-chain Tx Count', value: (w.onchain_tx_count||0) > 0 ? w.onchain_tx_count : '—', cls: '' },
+        { label: 'Pre-Polymarket Activity', value: w.pre_polymarket_activity ? 'yes' : 'no', cls: '' },
+        { label: 'Sybil Risk', value: (w.sybil_risk||0).toFixed(3), cls: (w.sybil_risk||0)<0.3?'green':(w.sybil_risk||0)<=0.6?'yellow':'red' },
+        { label: 'Revenge Flag', value: w.revenge_flag ? '🚩 yes ('+(w.revenge_events||0)+')' : 'no', cls: w.revenge_flag?'red':'green' },
+      ]
+    },
   ];
 
   document.getElementById('panel-body').innerHTML = sections.map(s => `
@@ -798,6 +849,9 @@ document.getElementById('export-btn').onclick = () => {
     'diversification','max_position_pct','yes_bias',
     'open_markets','open_unrealized','concentration','avg_pct_return',
     'wallet_age_days','avg_entry_price',
+    'brier_score','sortino_ratio','calmar_ratio','capital_turnover','slippage_proxy',
+    'onchain_age_days','onchain_tx_count','pre_polymarket_activity',
+    'sybil_risk','revenge_flag','revenge_events',
   ];
   const header = cols.join(',');
   const body = rows.map(w =>

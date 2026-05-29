@@ -37,6 +37,11 @@ class Config:
     ledger_path: str = "ledger.jsonl"
     log_path: str = "bot.log"
 
+    # ---- On-chain verification (optional) ----------------------------------
+    # Polygonscan API key for wallet-age / tx-count / sybil verification in
+    # discover_alpha.py. Optional — discovery degrades gracefully without it.
+    polygonscan_api_key: str = ""
+
 
 def load_config() -> Config:
     """Load config, overriding defaults from environment variables."""
@@ -56,6 +61,7 @@ def load_config() -> Config:
         "WATCHLIST_PATH": ("watchlist_path", str),
         "LEDGER_PATH": ("ledger_path", str),
         "LOG_PATH": ("log_path", str),
+        "POLYGONSCAN_API_KEY": ("polygonscan_api_key", str),
     }
     for env_key, (attr, cast) in env_map.items():
         val = os.getenv(env_key)

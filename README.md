@@ -53,6 +53,40 @@ Options:
 - `--period` — DAY, WEEK, MONTH, ALL
 - `--min-markets` — minimum resolved markets to qualify (default 10)
 
+### Scoring metrics
+
+Each wallet is profiled across 30+ metrics. Beyond raw performance (realized PnL,
+win rate, breadth, profit factor, drawdown, concentration), the score also weighs:
+
+**Risk-Adjusted (Tier 1)** — reward consistent, capital-efficient edge:
+- **Brier score** — mean `(entry_price − outcome)²`; probabilistic calibration. **Lower is better** (< 0.2 excellent).
+- **Sortino ratio** — mean per-market ROI / downside deviation (only losses count as risk).
+- **Calmar ratio** — annualized ROI / max drawdown (return per unit of worst-case loss).
+- **Capital turnover** — total volume / cost basis (how hard capital is recycled).
+
+**Verification & Red Flags (Tier 2)** — detect things that are dangerous to copy:
+- **On-chain wallet age / tx count / pre-Polymarket activity** — via Polygonscan. Optional; requires `POLYGONSCAN_API_KEY`. Without a key these stay `0`/`false` and discovery proceeds normally (graceful degradation).
+- **Sybil risk** — pool-level Jaccard overlap of traded markets with other candidates; high overlap suggests coordinated / wash-trading farms. Heavily penalized in the score.
+- **Revenge trading** — flags 2×+ position-size spikes immediately after a loss (count of events recorded).
+- **Slippage proxy** — placeholder (`0.0`); see Roadmap below.
+
+Set the optional key in `.env`:
+
+```
+POLYGONSCAN_API_KEY=your_free_polygonscan_key   # optional, enables on-chain verification
+```
+
+### Roadmap / Not Implemented (Tier 3)
+
+These were evaluated but deliberately left out — each requires an external/paid data feed we don't want to make a hard dependency:
+
+- **Slippage proxy (faithful)** — needs per-trade `OrderFilled` on-chain history; aggregate `/closed-positions` only exposes one `avgPrice` per market, so a true fill-dispersion measure isn't derivable yet.
+- **News latency** — requires a real-time news feed API to time entries against headline breaks.
+- **Social sentiment** — requires Twitter/X or Reddit firehose access (paid).
+- **Cross-market arbitrage** — requires synchronized full-book snapshots across correlated markets (paid streaming).
+- **Influence score** — requires social-graph / follower data (paid social APIs).
+- **Closing-line value (CLV)** — requires archived odds at resolution time across venues (paid odds history).
+
 ## Phase 2 — Watch On-Chain
 
 ```bash
@@ -112,6 +146,7 @@ All tunables are in `config.py` and can be overridden via environment variables:
 | `MAX_DAILY_LOSS_USDC` | 50 | Daily loss circuit breaker |
 | `COOLDOWN_SECONDS` | 300 | Per (wallet, market) cooldown |
 | `MIN_PAPER_TRADES` | 30 | Paper trades required before live |
+| `POLYGONSCAN_API_KEY` | "" | Optional — enables on-chain wallet verification in discovery |
 
 ## Risk Warnings
 
@@ -134,6 +169,7 @@ python -m pytest tests/ -v
 | File | Purpose |
 |------|---------|
 | `discover_alpha.py` | Stage 1: wallet discovery & scoring |
+| `onchain_metrics.py` | Polygonscan verification + sybil/slippage helpers |
 | `watch_onchain.py` | Stage 2: real-time on-chain signal source |
 | `config.py` | All configuration tunables |
 | `ledger.py` | Append-only trade ledger (JSONL) |

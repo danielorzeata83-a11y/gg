@@ -23,6 +23,7 @@ No authentication required. All endpoints are public Data API.
 Docs: https://docs.polymarket.com/api-reference/core/get-trader-leaderboard-rankings
 """
 
+import os
 import requests
 import time
 import json
@@ -32,6 +33,8 @@ import argparse
 from dataclasses import dataclass, field, asdict
 from collections import defaultdict
 from datetime import datetime
+
+import onchain_metrics
 
 DATA_API = "https://data-api.polymarket.com"
 
@@ -142,6 +145,21 @@ class WalletProfile:
     yes_bias: float = 0.0              # (yes_trades - no_trades) / total
     avg_entry_timing_days: float = 0.0 # placeholder
     wallet_age_days: float = 0.0       # days since first Polymarket trade
+
+    # --- 📐 Risk-Adjusted ---
+    brier_score: float = 0.0           # mean (entry_price - outcome)^2; LOWER is better (<0.2 excellent)
+    sortino_ratio: float = 0.0         # mean(per-market ROI) / downside_deviation
+    calmar_ratio: float = 0.0          # annualized ROI / max_drawdown
+    capital_turnover: float = 0.0      # total_volume / total_cost_basis
+
+    # --- 🔗 Verification & Red Flags ---
+    onchain_age_days: float = 0.0      # true wallet age from Polygonscan (0 if no API key)
+    onchain_tx_count: int = 0          # total Polygon tx count (0 if no API key)
+    pre_polymarket_activity: bool = False  # had DeFi/other activity before Polymarket
+    revenge_flag: bool = False         # detected 2x+ size spike after a loss
+    revenge_events: int = 0            # count of such events
+    sybil_risk: float = 0.0            # 0..1, pool-level co-trading overlap score
+    slippage_proxy: float = 0.0        # avg fill-price dispersion (approximation)
 
     # --- Composite ---
     alpha_score: float = 0.0
@@ -298,6 +316,71 @@ def _compute_extended_metrics(prof, closed_positions, open_positions):
     if prof.wallet_age_days and prof.wallet_age_days > 0:
         prof.trades_per_day = round(len(closed_positions) / prof.wallet_age_days, 3)
 
+    # --- 📐 Risk-Adjusted metrics ---
+    # (computed last: Calmar depends on wallet_age_days/max_drawdown set above)
+
+    # Brier Score: probabilistic accuracy
+    brier_terms = []
+    for p in closed_positions:
+        entry = p.get("avgPrice") or 0
+        if entry <= 0:
+            continue
+        won = 1 if (p.get("realizedPnl") or 0) > 0 else 0
+        brier_terms.append((entry - won) ** 2)
+    prof.brier_score = round(sum(brier_terms) / len(brier_terms), 4) if brier_terms else 0.0
+
+    # Sortino: reward / downside risk (per-market basis)
+    if len(market_rois) >= 2:
+        mean_r = sum(market_rois) / len(market_rois)
+        downside = [r for r in market_rois if r < 0]
+        if len(downside) >= 1:
+            dd_dev = (sum(r**2 for r in downside) / len(downside)) ** 0.5
+            prof.sortino_ratio = round(mean_r / dd_dev, 3) if dd_dev > 0 else 0.0
+        else:
+            prof.sortino_ratio = round(mean_r * 10, 3)  # no losses = capped high score
+
+    # Calmar: annualized return / max drawdown
+    if prof.max_drawdown > 0 and prof.wallet_age_days > 0:
+        annualized_roi = prof.roi_realized * (365.0 / max(prof.wallet_age_days, 1))
+        prof.calmar_ratio = round(annualized_roi / (prof.max_drawdown * 100), 3)
+    elif prof.roi_realized > 0 and prof.max_drawdown == 0:
+        prof.calmar_ratio = round(prof.roi_realized / 10, 3)  # no drawdown
+
+    # Capital turnover
+    prof.capital_turnover = round(prof.total_volume_usdc / total_cost, 3) if total_cost > 0 else 0.0
+
+    # Slippage proxy: real per-trade slippage requires on-chain OrderFilled fill-price
+    # history (each individual fill vs. the alpha's intended price). The aggregate
+    # /closed-positions rows only carry a single avgPrice per market, so a faithful
+    # dispersion measure is not derivable here. Left as 0.0 (Tier 2 future work,
+    # to be implemented once OrderFilled ingestion lands). Keep it honest.
+    prof.slippage_proxy = 0.0
+
+
+def _detect_revenge_trading(closed_positions):
+    """Detect size spikes (>=2x) immediately after a losing position.
+    Returns (flag, event_count)."""
+    # sort chronologically by end date
+    def _key(p):
+        return p.get("endDate") or p.get("updatedAt") or ""
+    ordered = sorted([p for p in closed_positions if _key(p)], key=_key)
+    if len(ordered) < 4:
+        return False, 0
+    costs = []
+    events = 0
+    prev_loss = False
+    for p in ordered:
+        cost = (p.get("avgPrice") or 0) * (p.get("totalBought") or 0)
+        if prev_loss and costs:
+            median = sorted(costs)[len(costs)//2]
+            if median > 0 and cost >= 2 * median:
+                events += 1
+        costs.append(cost)
+        if len(costs) > 20:
+            costs.pop(0)
+        prev_loss = (p.get("realizedPnl") or 0) < 0
+    return events >= 1, events
+
 
 def profile_wallet(cand):
     prof = WalletProfile(
@@ -345,7 +428,23 @@ def profile_wallet(cand):
     # Compute extended metrics from raw position rows
     _compute_extended_metrics(prof, closed, openp)
 
-    prof.alpha_score = compute_alpha_score(prof)
+    # Revenge-trading red flag (size spikes after losses)
+    prof.revenge_flag, prof.revenge_events = _detect_revenge_trading(closed)
+
+    # Stash traded markets for pool-level sybil detection in main().
+    # Non-dataclass attribute: asdict()/to_row() ignore it (not a declared field).
+    prof._market_set = set(by_market.keys())
+
+    # On-chain verification (Polygonscan). Only call if a key is configured,
+    # else skip to avoid slowing discovery (graceful degradation -> zeros).
+    if os.getenv("POLYGONSCAN_API_KEY"):
+        oc = onchain_metrics.wallet_onchain_profile(cand["proxyWallet"])
+        prof.onchain_age_days = oc.get("age_days", 0.0)
+        prof.onchain_tx_count = oc.get("tx_count", 0)
+        prof.pre_polymarket_activity = oc.get("pre_polymarket_activity", False)
+
+    # NOTE: alpha_score is computed in main() AFTER pool-level sybil_risk is
+    # available, because sybil_risk feeds the score.
     return prof
 
 
@@ -361,8 +460,10 @@ def compute_alpha_score(p: WalletProfile) -> float:
       + profit factor (log-scaled)
       + consistency score
       + accuracy vs odds
+      + risk-adjusted bonuses (Brier, Sortino, Calmar)
       - concentration penalty
       - max drawdown penalty
+      - red-flag penalties (revenge trading, sybil/co-trading risk)
     """
     if p.resolved_markets < MIN_MARKETS:
         return 0.0
@@ -378,10 +479,21 @@ def compute_alpha_score(p: WalletProfile) -> float:
     dd_penalty       = p.max_drawdown * 2.0                      # 0..2
     accuracy_term    = p.accuracy_vs_odds * 3                    # -3..+3
 
+    # Risk-adjusted bonuses
+    brier_term   = max(0, (0.25 - p.brier_score) * 8) if p.brier_score > 0 else 0   # <0.25 good, scaled 0..2
+    sortino_term = min(max(p.sortino_ratio, -2), 2)                                  # clamp -2..2
+    calmar_term  = min(p.calmar_ratio, 2) if p.calmar_ratio > 0 else 0               # 0..2
+
+    # Red-flag penalties
+    revenge_penalty = 1.5 if p.revenge_flag else 0
+    sybil_penalty   = p.sybil_risk * 3.0    # 0..3, heavy — coordinated wallets are dangerous to copy
+
     return round(
         pnl_term + winrate_term + breadth_term + pf_term
         + consistency_term + accuracy_term
-        - conc_penalty - dd_penalty,
+        + brier_term + sortino_term + calmar_term
+        - conc_penalty - dd_penalty
+        - revenge_penalty - sybil_penalty,
         3
     )
 
@@ -414,10 +526,17 @@ def main():
     for i, c in enumerate(candidates, 1):
         prof = profile_wallet(c)
         profiles.append(prof)
-        tag = f"score={prof.alpha_score:>6}" if prof.alpha_score else "excluded"
         print(f"      [{i:>3}/{len(candidates)}] {c['proxyWallet'][:10]}... "
               f"{c.get('userName','')[:18]:<18} markets={prof.resolved_markets:>3} "
-              f"winrate={prof.win_rate:.0%} realized=${prof.realized_pnl:>12,.0f} {tag}")
+              f"winrate={prof.win_rate:.0%} realized=${prof.realized_pnl:>12,.0f}")
+
+    # Pool-level sybil/co-trading risk must be computed across the WHOLE pool
+    # BEFORE scoring, because sybil_risk feeds the composite alpha score.
+    onchain_metrics.compute_sybil_risk(profiles)
+
+    # Now that sybil_risk is known for every wallet, compute the final score.
+    for prof in profiles:
+        prof.alpha_score = compute_alpha_score(prof)
 
     qualified = [p for p in profiles if p.alpha_score > 0]
     qualified.sort(key=lambda p: p.alpha_score, reverse=True)
