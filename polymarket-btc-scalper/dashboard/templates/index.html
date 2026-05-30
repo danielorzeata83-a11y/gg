@@ -1,0 +1,567 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Polymarket BTC Scalper Dashboard</title>
+  <style>
+    *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+    :root {
+      --bg:       #0d1117;
+      --surface:  #161b22;
+      --border:   #30363d;
+      --text:     #c9d1d9;
+      --muted:    #8b949e;
+      --green:    #3fb950;
+      --red:      #f85149;
+      --yellow:   #d29922;
+      --blue:     #58a6ff;
+      --purple:   #bc8cff;
+      --accent:   #1f6feb;
+    }
+
+    body {
+      background: var(--bg);
+      color: var(--text);
+      font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, monospace;
+      font-size: 14px;
+      line-height: 1.5;
+    }
+
+    header {
+      background: var(--surface);
+      border-bottom: 1px solid var(--border);
+      padding: 12px 24px;
+      display: flex;
+      align-items: center;
+      gap: 16px;
+    }
+
+    header h1 { font-size: 18px; color: var(--blue); }
+    header .badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 20px;
+      background: var(--accent);
+      color: #fff;
+    }
+    header .spacer { flex: 1; }
+    header button {
+      background: var(--green);
+      color: #000;
+      border: none;
+      padding: 6px 14px;
+      border-radius: 6px;
+      cursor: pointer;
+      font-weight: 600;
+      font-size: 13px;
+    }
+    header button:disabled { opacity: 0.5; cursor: not-allowed; }
+    header #scan-status { font-size: 12px; color: var(--muted); }
+
+    main { padding: 20px 24px; display: flex; flex-direction: column; gap: 24px; }
+
+    section { background: var(--surface); border: 1px solid var(--border); border-radius: 8px; overflow: hidden; }
+    section > .section-header {
+      padding: 12px 16px;
+      border-bottom: 1px solid var(--border);
+      font-weight: 600;
+      display: flex;
+      align-items: center;
+      gap: 8px;
+    }
+    section > .section-header .count {
+      font-size: 11px;
+      color: var(--muted);
+      background: var(--border);
+      padding: 1px 7px;
+      border-radius: 10px;
+    }
+
+    /* ── Tables ── */
+    .table-wrap { overflow-x: auto; }
+    table { width: 100%; border-collapse: collapse; }
+    thead th {
+      padding: 8px 12px;
+      text-align: left;
+      font-size: 11px;
+      text-transform: uppercase;
+      letter-spacing: .05em;
+      color: var(--muted);
+      background: var(--bg);
+      border-bottom: 1px solid var(--border);
+      cursor: pointer;
+      user-select: none;
+      white-space: nowrap;
+    }
+    thead th:hover { color: var(--text); }
+    thead th.sorted-asc::after  { content: " ▲"; }
+    thead th.sorted-desc::after { content: " ▼"; }
+
+    tbody tr { border-bottom: 1px solid var(--border); transition: background .1s; }
+    tbody tr:last-child { border-bottom: none; }
+    tbody tr:hover { background: rgba(255,255,255,.03); }
+    tbody td { padding: 8px 12px; vertical-align: middle; }
+
+    .score-bar {
+      display: inline-flex;
+      align-items: center;
+      gap: 8px;
+      width: 120px;
+    }
+    .score-bar .bar-bg {
+      flex: 1;
+      height: 6px;
+      background: var(--border);
+      border-radius: 3px;
+      overflow: hidden;
+    }
+    .score-bar .bar-fill {
+      height: 100%;
+      border-radius: 3px;
+      background: var(--green);
+    }
+    .score-label { font-weight: 700; font-size: 13px; min-width: 36px; }
+
+    .flag { font-size: 11px; padding: 1px 5px; border-radius: 4px; margin: 1px; display: inline-block; }
+    .flag-warn  { background: rgba(210,153,34,.2); color: var(--yellow); }
+    .flag-bad   { background: rgba(248,81,73,.2);  color: var(--red); }
+    .flag-sybil { background: var(--red);           color: #fff; }
+
+    .link-btn {
+      color: var(--blue);
+      text-decoration: none;
+      font-size: 12px;
+    }
+    .link-btn:hover { text-decoration: underline; }
+
+    .mono { font-family: monospace; font-size: 12px; }
+
+    /* ── Markets panel ── */
+    .markets-grid {
+      display: grid;
+      grid-template-columns: repeat(auto-fill, minmax(280px, 1fr));
+      gap: 12px;
+      padding: 16px;
+    }
+    .market-card {
+      background: var(--bg);
+      border: 1px solid var(--border);
+      border-radius: 6px;
+      padding: 12px;
+    }
+    .market-card .q { font-weight: 600; margin-bottom: 6px; font-size: 13px; }
+    .market-card .meta { font-size: 12px; color: var(--muted); display: flex; gap: 12px; flex-wrap: wrap; }
+    .market-card .meta span.green { color: var(--green); }
+    .market-card .meta span.red   { color: var(--red); }
+    .market-card .meta span.yellow { color: var(--yellow); }
+    .badge-ready { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--green); color: #000; font-weight: 700; }
+    .badge-noready { font-size: 10px; padding: 1px 6px; border-radius: 4px; background: var(--border); color: var(--muted); }
+
+    /* ── Alerts ── */
+    .alerts-list { padding: 8px 0; }
+    .alert-row {
+      padding: 8px 16px;
+      border-bottom: 1px solid var(--border);
+      display: grid;
+      grid-template-columns: 140px 100px 1fr;
+      gap: 12px;
+      align-items: center;
+      font-size: 13px;
+    }
+    .alert-row:last-child { border-bottom: none; }
+    .alert-row .ts { color: var(--muted); font-size: 11px; font-family: monospace; }
+    .alert-row .type-badge {
+      font-size: 11px;
+      padding: 2px 8px;
+      border-radius: 10px;
+      text-align: center;
+      font-weight: 600;
+    }
+    .type-convergence { background: rgba(188,140,255,.2); color: var(--purple); }
+    .type-new_alpha   { background: rgba(63,185,80,.2);   color: var(--green); }
+    .alert-row .msg { color: var(--text); }
+
+    /* ── Heatmap ── */
+    .heatmap-wrap { padding: 16px; overflow-x: auto; }
+    .heatmap-table { border-collapse: collapse; }
+    .heatmap-table th, .heatmap-table td { padding: 3px 5px; text-align: center; font-size: 11px; }
+    .heatmap-table th { color: var(--muted); }
+    .heatmap-table td.cell {
+      width: 24px;
+      height: 20px;
+      border-radius: 2px;
+      background: var(--border);
+    }
+    .heatmap-table td.day-label { color: var(--muted); text-align: right; padding-right: 8px; white-space: nowrap; }
+
+    /* ── Empty state ── */
+    .empty { padding: 40px; text-align: center; color: var(--muted); }
+
+    /* ── Loader ── */
+    .loading { padding: 24px; text-align: center; color: var(--muted); }
+    .spinner {
+      display: inline-block;
+      width: 20px; height: 20px;
+      border: 2px solid var(--border);
+      border-top-color: var(--blue);
+      border-radius: 50%;
+      animation: spin .7s linear infinite;
+      vertical-align: middle;
+      margin-right: 8px;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+  </style>
+</head>
+<body>
+
+<header>
+  <h1>⚡ BTC Scalper</h1>
+  <span class="badge">Polymarket</span>
+  <span class="spacer"></span>
+  <span id="scan-status"></span>
+  <button id="scan-btn" onclick="triggerScan()">Run Scan</button>
+</header>
+
+<main>
+
+  <!-- Alpha Wallets Table -->
+  <section id="sec-wallets">
+    <div class="section-header">
+      Alpha Wallets
+      <span class="count" id="wallet-count">–</span>
+    </div>
+    <div class="table-wrap">
+      <table id="wallet-table">
+        <thead>
+          <tr>
+            <th onclick="sortTable('wallet-table', 0)">Wallet</th>
+            <th onclick="sortTable('wallet-table', 1)">Alpha Score</th>
+            <th onclick="sortTable('wallet-table', 2)">Win Rate</th>
+            <th onclick="sortTable('wallet-table', 3)">Profit Factor</th>
+            <th onclick="sortTable('wallet-table', 4)">Sortino</th>
+            <th onclick="sortTable('wallet-table', 5)">CLV</th>
+            <th onclick="sortTable('wallet-table', 6)">Trades</th>
+            <th onclick="sortTable('wallet-table', 7)">Volume</th>
+            <th>Flags</th>
+            <th>Link</th>
+          </tr>
+        </thead>
+        <tbody id="wallet-tbody">
+          <tr><td colspan="10" class="loading"><span class="spinner"></span>Loading wallets…</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <!-- Active Markets -->
+  <section id="sec-markets">
+    <div class="section-header">
+      Active BTC Markets
+      <span class="count" id="market-count">–</span>
+    </div>
+    <div id="markets-container" class="markets-grid">
+      <div class="loading"><span class="spinner"></span>Loading markets…</div>
+    </div>
+  </section>
+
+  <!-- Two-column: Alerts + Heatmap -->
+  <div style="display:grid; grid-template-columns: 1fr 1fr; gap: 24px;">
+
+    <!-- Alerts -->
+    <section id="sec-alerts">
+      <div class="section-header">
+        Recent Alerts
+        <span class="count" id="alert-count">–</span>
+      </div>
+      <div id="alerts-container" class="alerts-list">
+        <div class="loading"><span class="spinner"></span>Loading alerts…</div>
+      </div>
+    </section>
+
+    <!-- Heatmap -->
+    <section id="sec-heatmap">
+      <div class="section-header">Session Heatmap <span style="font-size:11px;color:var(--muted);font-weight:400">(alpha wallet activity by UTC hour)</span></div>
+      <div id="heatmap-container" class="heatmap-wrap">
+        <div class="loading"><span class="spinner"></span>Loading heatmap…</div>
+      </div>
+    </section>
+
+  </div>
+
+</main>
+
+<script>
+/* ── Utilities ───────────────────────────────────────────────────────────── */
+const $ = id => document.getElementById(id);
+
+function fmt_pct(v) {
+  if (v == null) return '–';
+  return (v * 100).toFixed(1) + '%';
+}
+function fmt_num(v, decimals = 2) {
+  if (v == null) return '–';
+  return Number(v).toFixed(decimals);
+}
+function fmt_usd(v) {
+  if (v == null) return '–';
+  return '$' + Number(v).toLocaleString(undefined, {maximumFractionDigits: 0});
+}
+function fmt_addr(addr) {
+  if (!addr) return '–';
+  return addr.slice(0, 6) + '…' + addr.slice(-4);
+}
+function fmt_ts(ts) {
+  if (!ts) return '–';
+  return new Date(ts).toLocaleString();
+}
+function score_color(s) {
+  if (s >= 75) return '#3fb950';
+  if (s >= 50) return '#d29922';
+  return '#f85149';
+}
+
+/* ── Sortable table ──────────────────────────────────────────────────────── */
+let _sortState = {};
+function sortTable(tableId, colIdx) {
+  const table = document.getElementById(tableId);
+  const tbody = table.querySelector('tbody');
+  const rows = Array.from(tbody.querySelectorAll('tr'));
+  const key = `${tableId}-${colIdx}`;
+  const asc = _sortState[key] !== true;
+  _sortState[key] = asc;
+
+  rows.sort((a, b) => {
+    const ta = a.cells[colIdx]?.dataset?.val ?? a.cells[colIdx]?.innerText ?? '';
+    const tb = b.cells[colIdx]?.dataset?.val ?? b.cells[colIdx]?.innerText ?? '';
+    const na = parseFloat(ta), nb = parseFloat(tb);
+    if (!isNaN(na) && !isNaN(nb)) return asc ? na - nb : nb - na;
+    return asc ? ta.localeCompare(tb) : tb.localeCompare(ta);
+  });
+
+  // Update header classes
+  table.querySelectorAll('thead th').forEach((th, i) => {
+    th.classList.remove('sorted-asc', 'sorted-desc');
+    if (i === colIdx) th.classList.add(asc ? 'sorted-asc' : 'sorted-desc');
+  });
+
+  rows.forEach(r => tbody.appendChild(r));
+}
+
+/* ── Wallets ─────────────────────────────────────────────────────────────── */
+async function loadWallets() {
+  try {
+    const res = await fetch('/api/wallets');
+    const wallets = await res.json();
+    $('wallet-count').textContent = wallets.length;
+    const tbody = $('wallet-tbody');
+
+    if (!wallets.length) {
+      tbody.innerHTML = '<tr><td colspan="10" class="empty">No alpha wallets found yet. Run a scan to discover wallets.</td></tr>';
+      return;
+    }
+
+    tbody.innerHTML = wallets.map(w => {
+      const score = Number(w.alpha_score || 0);
+      const color = score_color(score);
+      const barW = Math.max(0, Math.min(100, score));
+
+      const flags = [];
+      if (w.flag_martingale) flags.push('<span class="flag flag-warn">Martingale</span>');
+      if (w.flag_revenge)    flags.push('<span class="flag flag-warn">Revenge</span>');
+      if (w.flag_fomo)       flags.push('<span class="flag flag-warn">FOMO</span>');
+      if (w.flag_concentration) flags.push('<span class="flag flag-warn">Conc.</span>');
+      if (w.flag_sybil)     flags.push('<span class="flag flag-sybil">Sybil</span>');
+
+      return `<tr>
+        <td class="mono" data-val="${w.address}">${fmt_addr(w.address)}</td>
+        <td data-val="${score}">
+          <div class="score-bar">
+            <span class="score-label" style="color:${color}">${score.toFixed(1)}</span>
+            <div class="bar-bg"><div class="bar-fill" style="width:${barW}%;background:${color}"></div></div>
+          </div>
+        </td>
+        <td data-val="${w.win_rate}">${fmt_pct(w.win_rate)}</td>
+        <td data-val="${w.profit_factor}">${fmt_num(w.profit_factor)}</td>
+        <td data-val="${w.sortino_ratio}">${fmt_num(w.sortino_ratio)}</td>
+        <td data-val="${w.clv}">${fmt_num(w.clv, 4)}</td>
+        <td data-val="${w.total_trades}">${w.total_trades}</td>
+        <td data-val="${w.total_volume}">${fmt_usd(w.total_volume)}</td>
+        <td>${flags.join('') || '<span style="color:var(--muted)">–</span>'}</td>
+        <td><a class="link-btn" href="${w.profile_url}" target="_blank" rel="noopener">Polymarket ↗</a></td>
+      </tr>`;
+    }).join('');
+  } catch (e) {
+    $('wallet-tbody').innerHTML = `<tr><td colspan="10" class="empty">Error loading wallets: ${e.message}</td></tr>`;
+  }
+}
+
+/* ── Markets ─────────────────────────────────────────────────────────────── */
+async function loadMarkets() {
+  try {
+    const res = await fetch('/api/markets');
+    const markets = await res.json();
+    $('market-count').textContent = markets.length;
+    const container = $('markets-container');
+
+    if (!markets.length) {
+      container.innerHTML = '<div class="empty">No active BTC markets found.</div>';
+      return;
+    }
+
+    container.innerHTML = markets.map(m => {
+      const spread = m.spread_pct != null ? (m.spread_pct * 100).toFixed(2) + '%' : 'N/A';
+      const spreadClass = m.spread_pct != null && m.spread_pct < 0.05 ? 'green' : 'red';
+      const copyBadge = m.copy_ready
+        ? '<span class="badge-ready">COPY READY</span>'
+        : '<span class="badge-noready">low liquidity</span>';
+      const endDt = m.end_time ? new Date(m.end_time).toLocaleString() : 'N/A';
+
+      return `<div class="market-card">
+        <div class="q">${m.question}</div>
+        <div class="meta">
+          <span>Vol: <b>${fmt_usd(m.volume)}</b></span>
+          <span class="${spreadClass}">Spread: ${spread}</span>
+          <span>Ends: ${endDt}</span>
+          <span>${copyBadge}</span>
+          <a class="link-btn" href="${m.market_url}" target="_blank" rel="noopener">View ↗</a>
+        </div>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    $('markets-container').innerHTML = `<div class="empty">Error loading markets: ${e.message}</div>`;
+  }
+}
+
+/* ── Alerts ──────────────────────────────────────────────────────────────── */
+async function loadAlerts() {
+  try {
+    const res = await fetch('/api/alerts');
+    const alerts = await res.json();
+    $('alert-count').textContent = alerts.length;
+    const container = $('alerts-container');
+
+    if (!alerts.length) {
+      container.innerHTML = '<div class="empty">No alerts yet.</div>';
+      return;
+    }
+
+    container.innerHTML = alerts.map(a => {
+      const typeClass = a.type === 'convergence' ? 'type-convergence' : 'type-new_alpha';
+      const typeLabel = a.type === 'convergence' ? 'Convergence' : 'New Alpha';
+      return `<div class="alert-row">
+        <span class="ts">${a.timestamp ? a.timestamp.replace('T', ' ').slice(0,19) : '–'}</span>
+        <span class="type-badge ${typeClass}">${typeLabel}</span>
+        <span class="msg">${a.message}</span>
+      </div>`;
+    }).join('');
+  } catch (e) {
+    $('alerts-container').innerHTML = `<div class="empty">Error loading alerts: ${e.message}</div>`;
+  }
+}
+
+/* ── Heatmap ─────────────────────────────────────────────────────────────── */
+async function loadHeatmap() {
+  try {
+    const res = await fetch('/api/heatmap');
+    const data = await res.json();
+    const grid = data.grid; // 7 x 24
+    const days = data.days;
+
+    // Find max for color scaling
+    let maxVal = 1;
+    grid.forEach(row => row.forEach(v => { if (v > maxVal) maxVal = v; }));
+
+    const hours = Array.from({length: 24}, (_, i) => i);
+
+    let html = '<table class="heatmap-table"><thead><tr><th></th>';
+    html += hours.map(h => `<th>${h}</th>`).join('');
+    html += '</tr></thead><tbody>';
+
+    days.forEach((day, d) => {
+      html += `<tr><td class="day-label">${day}</td>`;
+      html += grid[d].map(v => {
+        const intensity = maxVal > 0 ? v / maxVal : 0;
+        const alpha = (intensity * 0.85 + (v > 0 ? 0.1 : 0)).toFixed(2);
+        const bg = v > 0 ? `rgba(63,185,80,${alpha})` : 'var(--border)';
+        return `<td class="cell" style="background:${bg}" title="${v} trades"></td>`;
+      }).join('');
+      html += '</tr>';
+    });
+    html += '</tbody></table>';
+
+    $('heatmap-container').innerHTML = html;
+  } catch (e) {
+    $('heatmap-container').innerHTML = `<div class="empty">Error loading heatmap: ${e.message}</div>`;
+  }
+}
+
+/* ── Scan trigger ────────────────────────────────────────────────────────── */
+async function triggerScan() {
+  const btn = $('scan-btn');
+  const status = $('scan-status');
+  btn.disabled = true;
+  status.textContent = 'Starting scan…';
+
+  try {
+    const res = await fetch('/api/scan', { method: 'POST' });
+    const data = await res.json();
+    if (res.status === 409) {
+      status.textContent = 'Scan already running…';
+    } else {
+      status.textContent = 'Scan running in background…';
+      pollScanStatus();
+    }
+  } catch (e) {
+    status.textContent = `Error: ${e.message}`;
+    btn.disabled = false;
+  }
+}
+
+async function pollScanStatus() {
+  const btn = $('scan-btn');
+  const status = $('scan-status');
+
+  const interval = setInterval(async () => {
+    try {
+      const res = await fetch('/api/status');
+      const data = await res.json();
+      if (!data.running) {
+        clearInterval(interval);
+        btn.disabled = false;
+        status.textContent = data.message || 'Done';
+        // Refresh data
+        loadWallets();
+        loadAlerts();
+        loadMarkets();
+        loadHeatmap();
+      }
+    } catch (e) {
+      clearInterval(interval);
+      btn.disabled = false;
+      status.textContent = 'Status check failed';
+    }
+  }, 3000);
+}
+
+/* ── Init ────────────────────────────────────────────────────────────────── */
+document.addEventListener('DOMContentLoaded', () => {
+  loadWallets();
+  loadMarkets();
+  loadAlerts();
+  loadHeatmap();
+
+  // Auto-refresh every 60s
+  setInterval(() => {
+    loadWallets();
+    loadAlerts();
+    loadHeatmap();
+  }, 60_000);
+
+  // Markets refresh every 30s
+  setInterval(loadMarkets, 30_000);
+});
+</script>
+</body>
+</html>
