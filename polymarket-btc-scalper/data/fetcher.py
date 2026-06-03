@@ -12,17 +12,18 @@ logger = logging.getLogger(__name__)
 
 
 def fetch_active_markets(limit: int = 500, offset: int = 0) -> List[Dict[str, Any]]:
-    """Fetch markets from Gamma API (active + not closed)."""
+    """Fetch markets from Gamma API sorted by volume descending."""
     params = {
         "active": "true",
         "closed": "false",
         "limit": limit,
         "offset": offset,
+        "order": "volume",
+        "ascending": "false",
     }
     data = get_with_retry(config.GAMMA_MARKETS_URL, params=params)
     if data is None:
         return []
-    # Gamma may return a list directly or wrap it
     if isinstance(data, list):
         return data
     if isinstance(data, dict):
@@ -31,7 +32,7 @@ def fetch_active_markets(limit: int = 500, offset: int = 0) -> List[Dict[str, An
 
 
 def fetch_all_active_markets() -> List[Dict[str, Any]]:
-    """Paginate through all active markets."""
+    """Paginate through active markets (up to 2000)."""
     all_markets: List[Dict[str, Any]] = []
     offset = 0
     limit = 500
@@ -40,19 +41,21 @@ def fetch_all_active_markets() -> List[Dict[str, Any]]:
         if not batch:
             break
         all_markets.extend(batch)
-        if len(batch) < limit:
+        if len(batch) < limit or len(all_markets) >= 2000:
             break
         offset += limit
     logger.info("Fetched %d active markets from Gamma API", len(all_markets))
     return all_markets
 
 
-def fetch_recently_closed_markets(limit: int = 200) -> List[Dict[str, Any]]:
-    """Fetch recently resolved markets from Gamma API."""
+def fetch_recently_closed_markets(limit: int = 500) -> List[Dict[str, Any]]:
+    """Fetch recently resolved markets sorted by end date descending."""
     params = {
         "active": "false",
         "closed": "true",
         "limit": limit,
+        "order": "end_date_iso",
+        "ascending": "false",
     }
     data = get_with_retry(config.GAMMA_MARKETS_URL, params=params)
     if data is None:
@@ -61,6 +64,33 @@ def fetch_recently_closed_markets(limit: int = 200) -> List[Dict[str, Any]]:
         return data
     if isinstance(data, dict):
         return data.get("markets", data.get("results", []))
+    return []
+
+
+def fetch_recent_trades(limit: int = 500) -> List[Dict[str, Any]]:
+    """Fetch the most recent trades across all markets."""
+    params = {"limit": limit}
+    data = get_with_retry(config.DATA_TRADES_URL, params=params)
+    if data is None:
+        return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("trades", data.get("results", []))
+    return []
+
+
+def fetch_events(tag: str = "crypto", limit: int = 200) -> List[Dict[str, Any]]:
+    """Fetch events by tag from Gamma API."""
+    url = f"{config.GAMMA_API_BASE}/events"
+    params = {"tag": tag, "limit": limit, "active": "true"}
+    data = get_with_retry(url, params=params)
+    if data is None:
+        return []
+    if isinstance(data, list):
+        return data
+    if isinstance(data, dict):
+        return data.get("events", data.get("results", []))
     return []
 
 

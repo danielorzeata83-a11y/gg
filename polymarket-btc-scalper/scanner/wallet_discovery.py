@@ -132,6 +132,7 @@ def profile_wallet(
 def discover_alpha_wallets(
     markets: List[Market],
     max_wallets: int = 200,
+    extra_wallets: Optional[Set[str]] = None,
 ) -> List[WalletMetrics]:
     """Full pipeline: market trades → wallet addresses → profiles → alpha list.
 
@@ -142,6 +143,9 @@ def discover_alpha_wallets(
     """
     # Step 1: collect wallet addresses
     wallet_addresses = discover_wallets_from_markets(markets)
+    if extra_wallets:
+        wallet_addresses |= extra_wallets
+        logger.info("Added %d extra wallets from recent trades", len(extra_wallets))
 
     # Limit to avoid excessive API calls in one run
     wallet_list = list(wallet_addresses)[:max_wallets]

@@ -32,17 +32,33 @@ def run_scan_cycle() -> List[WalletMetrics]:
     logger.info("=== Scan cycle started at %s ===", _now_iso())
 
     # 1. Fetch and filter markets
-    logger.info("Step 1: Fetching active markets from Gamma API…")
+    logger.info("Step 1: Fetching markets from Gamma API…")
     raw_active = fetcher.fetch_all_active_markets()
-    raw_closed = fetcher.fetch_recently_closed_markets()
+    raw_closed = fetcher.fetch_recently_closed_markets(limit=500)
     all_raw = raw_active + raw_closed
 
     all_markets = parser.parse_markets(all_raw)
     btc_markets = market_filter.filter_btc_markets(all_markets)
-    logger.info("Found %d BTC-related markets (active + recently closed)", len(btc_markets))
+    logger.info("Found %d BTC-related markets", len(btc_markets))
 
-    if not btc_markets:
-        logger.warning("No BTC markets found. Check API connectivity or keyword config.")
+    # 1b. Also get wallets from recent trades directly (covers gaps in market filter)
+    logger.info("Step 1b: Fetching recent trades to discover active wallets…")
+    recent_raw_trades = fetcher.fetch_recent_trades(limit=1000)
+    logger.info("Fetched %d recent trades from data API", len(recent_raw_trades))
+
+    # Extract BTC market IDs from recent trades
+    btc_condition_ids = {m.condition_id for m in btc_markets}
+    btc_wallet_addresses: set = set()
+    for t in recent_raw_trades:
+        mid = t.get("market") or t.get("conditionId") or t.get("condition_id") or ""
+        wallet = t.get("maker") or t.get("trader") or t.get("transactorAddress") or ""
+        if mid in btc_condition_ids and wallet:
+            btc_wallet_addresses.add(wallet)
+
+    logger.info("Found %d unique wallets in recent BTC trades", len(btc_wallet_addresses))
+
+    if not btc_markets and not btc_wallet_addresses:
+        logger.warning("No BTC markets or wallets found. Check API connectivity.")
         return []
 
     # 2. Persist markets
@@ -51,7 +67,9 @@ def run_scan_cycle() -> List[WalletMetrics]:
 
     # 3. Discover alpha wallets
     logger.info("Step 2: Discovering and profiling wallets…")
-    alpha_wallets = wallet_discovery.discover_alpha_wallets(btc_markets)
+    alpha_wallets = wallet_discovery.discover_alpha_wallets(
+        btc_markets, extra_wallets=btc_wallet_addresses
+    )
 
     if not alpha_wallets:
         logger.info("No alpha wallets found in this cycle.")

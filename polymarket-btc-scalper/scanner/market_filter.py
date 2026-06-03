@@ -60,18 +60,30 @@ def has_sufficient_volume(market: Market, min_volume: float = config.MIN_MARKET_
     return market.volume >= min_volume
 
 
+def is_recent_market(market: Market, days: int = 30) -> bool:
+    """Return True if market was created or resolved within the last *days* days."""
+    end_dt = _parse_end_time(market.end_time)
+    if end_dt is None:
+        return market.active
+    cutoff = _now() - timedelta(days=days)
+    return end_dt >= cutoff
+
+
 def filter_btc_markets(markets: List[Market]) -> List[Market]:
-    """Return markets that are BTC-related AND (live short-term OR recently resolved) AND have volume."""
+    """Return BTC markets that are recent (last 30 days) OR active, with sufficient volume."""
     result: List[Market] = []
     for m in markets:
         if not is_btc_market(m):
             continue
         if not has_sufficient_volume(m):
             continue
-        if is_short_term_live(m) or m.active or is_recently_resolved(m):
+        # Accept: active markets created recently OR resolved in last 30 days
+        if m.active and is_recent_market(m, days=365):
+            result.append(m)
+        elif is_recently_resolved(m) and is_recent_market(m, days=30):
             result.append(m)
     logger.info(
-        "Market filter: %d/%d markets passed BTC short-term filter",
+        "Market filter: %d/%d markets passed BTC filter",
         len(result), len(markets),
     )
     return result
